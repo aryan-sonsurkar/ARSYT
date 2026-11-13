@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CodeShortsBot Dashboard</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0d1117; color: #c9d1d9; padding: 20px; }
+  .container { max-width: 1200px; margin: 0 auto; }
+  h1 { color: #58a6ff; margin-bottom: 24px; font-size: 28px; }
+  h2 { color: #58a6ff; margin: 24px 0 12px; font-size: 20px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 24px; }
+  .card { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 20px; }
+  .card .value { font-size: 32px; font-weight: 700; color: #f0f6fc; }
+  .card .label { font-size: 13px; color: #8b949e; margin-top: 4px; }
+  .card.green .value { color: #3fb950; }
+  .card.red .value { color: #f85149; }
+  .card.yellow .value { color: #d29922; }
+  table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+  th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid #21262d; font-size: 14px; }
+  th { color: #8b949e; font-weight: 600; text-transform: uppercase; font-size: 12px; }
+  td { color: #c9d1d9; }
+  .status { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 12px; font-weight: 600; }
+  .status.ok { background: #1b3826; color: #3fb950; }
+  .status.fail { background: #3d1c1c; color: #f85149; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; margin: 2px; }
+  .badge.yt { background: #1a1a2e; color: #ff4444; }
+  .badge.ig { background: #1a1a2e; color: #e1306c; }
+  .health-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+  .health-item { padding: 12px; border-radius: 6px; border: 1px solid #30363d; background: #161b22; text-align: center; }
+  .health-item .icon { font-size: 24px; }
+  .health-item .name { font-size: 12px; color: #8b949e; margin-top: 4px; }
+  .weights { display: flex; flex-wrap: wrap; gap: 8px; }
+  .weight-tag { background: #1f2937; padding: 6px 14px; border-radius: 16px; font-size: 13px; border: 1px solid #30363d; }
+  .weight-tag .pct { color: #58a6ff; font-weight: 600; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>📊 CodeShortsBot Dashboard</h1>
+
+  <div class="grid">
+    <div class="card"><div class="value">{{ total_videos }}</div><div class="label">Total Videos</div></div>
+    <div class="card green"><div class="value">{{ uploaded }}</div><div class="label">Uploaded</div></div>
+    {% if failed > 0 %}<div class="card red">{% else %}<div class="card">{% endif %}
+      <div class="value">{{ failed }}</div><div class="label">Failed</div></div>
+    <div class="card yellow"><div class="value">{{ pending }}</div><div class="label">Pending</div></div>
+    <div class="card"><div class="value">{{ total_views }}</div><div class="label">Total Views (30d)</div></div>
+    <div class="card green"><div class="value">{{ total_likes }}</div><div class="label">Total Likes (30d)</div></div>
+    <div class="card"><div class="value">{{ avg_engagement }}%</div><div class="label">Avg Engagement (30d)</div></div>
+  </div>
+
+  <h2>🔧 Service Health</h2>
+  <div class="health-grid">
+    {% for name, status in health.items() %}
+    <div class="health-item">
+      <div class="icon">{{ '✅' if status.get('ok') else '❌' }}</div>
+      <div style="font-size:14px;font-weight:600;margin-top:4px;">{{ name|capitalize }}</div>
+      <div class="name">{{ status.get('detail', '')[:50] }}</div>
+    </div>
+    {% endfor %}
+  </div>
+
+  <h2>📈 Category Weights</h2>
+  <div class="weights">
+    {% for cat, weight in category_weights.items() %}
+    <span class="weight-tag">{{ cat.replace('_', ' ') }} <span class="pct">{{ (weight * 100) | round(1) }}%</span></span>
+    {% endfor %}
+  </div>
+
+  <h2>🎬 Recent Videos</h2>
+  <table>
+    <tr><th>Title</th><th>Status</th><th>Upload</th><th>Date</th></tr>
+    {% for v in recent_videos %}
+    <tr>
+      <td>{{ v.title[:50] }}</td>
+      <td><span class="status {{ 'ok' if v.status == 'completed' else 'fail' }}">{{ v.status }}</span></td>
+      <td>
+        {% if v.uploaded_youtube %}<span class="badge yt">YT</span>{% endif %}
+      </td>
+      <td>{{ v.created_at[:10] if v.created_at else '' }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+</body>
+</html>

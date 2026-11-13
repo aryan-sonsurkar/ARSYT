@@ -1,0 +1,16 @@
+1. Hook: A close-up of a smartphone screen displaying a login page for a popular AI app, with the camera zooming in on the "Login" button, which is slightly highlighted in amber color to grab attention, against a dark teal background.
+
+2. Problem: A dimly lit room filled with old computer parts and wires, with a single laptop screen displaying an error message about a buffer overflow vulnerability, illuminated by a faint cyan glow.
+
+3. Explanation: An animated flowchart of data being fed into a neural network, with each step highlighted in neon teal as it's processed, but a small red X symbol overlaid on the last node to represent the tampered data, against a dark background with subtle gradient effects.
+
+4. Visualization: A 2D process diagram showing how SQL injections can be used to bypass AI security measures, with arrows and lines connecting nodes in amber color to represent the exploited vulnerability, set against a deep cyan blue background.
+
+5. Example: A realistic simulation of a chatbot giving medical advice on a screen, with the words "fake medical data" highlighted in red above it, against a dark teal background that gradually lightens as the scene progresses.
+
+6. Real-world use: A news headline reading "AI-powered Healthcare System Hacked, Millions of Records Compromised", displayed on a laptop screen, with subtle animations and scrolling effects to convey a sense of urgency and importance, set against a dark blue background.
+
+7. Advanced concept: A technical illustration of the impact of data tampering on AI model training, showing how corrupted data can create cascading errors in the neural network's decision-making process, highlighted in neon cyan.
+
+8. CTA: An animated subscription button with teal accents and a bright amber glow, superimposed over a dark background with subtle gradient effects, surrounded by words "Subscribe for more hidden truths" in white text.
+

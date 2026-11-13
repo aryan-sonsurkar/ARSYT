@@ -1,0 +1,155 @@
+# CodeShortsBot
+
+Automated daily YouTube Shorts + Instagram Reels generator for coding content, with adaptive content strategy and storage management.
+
+> **ClipFree development:** This repository is evolving into ClipFree, a local podcast-to-shorts production studio. Phase 1 adds a separate Next.js web dashboard and FastAPI/SQLite backend while retaining the existing CodeShortsBot pipeline and data. See [SETUP_GUIDE.md](SETUP_GUIDE.md), [TECHNICAL_ARCHITECTURE.md](TECHNICAL_ARCHITECTURE.md), [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md), and [KNOWN_ISSUES.md](KNOWN_ISSUES.md).
+
+## Architecture
+
+```
+codeshortsbot/
+├── config/                  # Configuration (.env, pydantic-settings)
+├── database/                # SQLite models, repository, analytics
+├── logs/                    # Daily log files
+├── outputs/                 # Final video exports
+├── reports/                 # Weekly strategy + cleanup reports
+├── scripts/                 # Generated scripts (text)
+├── voices/                  # TTS narration audio
+├── images/                  # Generated/placeholder images
+├── subtitles/               # SRT caption files
+├── uploads/                 # Upload tracking
+├── src/
+│   ├── agents/
+│   │   └── strategy_agent.py    # Weekly review, trend analysis, adaptive weights
+│   ├── system/
+│   │   └── storage_monitor.py   # Disk monitoring, asset cleanup
+│   ├── content_generator.py     # Ollama topic generation (weighted)
+│   ├── script_generator.py      # Script writing
+│   ├── voice_generator.py       # Kokoro TTS / gTTS
+│   ├── image_generator.py       # ComfyUI Flux / placeholders
+│   ├── caption_generator.py     # SRT subtitle generation
+│   ├── video_assembler.py       # FFmpeg + MoviePy editing
+│   └── uploader.py              # Playwright + PyAutoGUI uploads
+├── main.py                     # Entry point + APScheduler (daily + weekly)
+├── .env.example
+└── requirements.txt
+```
+
+## Prerequisites
+
+- **Python 3.12+**
+- **Ollama** running locally with `qwen3` model pulled
+- **Kokoro TTS** (optional - falls back to gTTS)
+- **ComfyUI** running locally with Flux workflow (optional - falls back to placeholder images)
+- **FFmpeg** installed and in PATH
+- **Playwright** browsers installed (`playwright install chromium`)
+
+## Setup
+
+```bash
+cd codeshortsbot
+python -m venv venv
+# source venv/bin/activate  (Linux/Mac)
+# venv\Scripts\activate     (Windows)
+pip install -r requirements.txt
+playwright install chromium
+cp .env.example .env  # Edit with your credentials
+ollama pull qwen3
+```
+
+## Usage
+
+| Command | Description |
+|---|---|
+| `python main.py` | Scheduled daemon (daily gen + Sunday maintenance) |
+| `python main.py --once` | Generate and upload one video immediately |
+| `python main.py --weekly` | Run weekly maintenance (strategy + cleanup) |
+| `python main.py --strategy-report` | Generate strategy report only |
+| `python main.py --cleanup` | Run storage cleanup only |
+| `python main.py --setup-sessions` | Initialize persistent browser sessions (first-run login) |
+
+## Persistent Browser Sessions
+
+CodeShortsBot uses Playwright's `launch_persistent_context()` to save and reuse browser profiles. This avoids Google and Instagram login challenges, 2FA prompts, and CAPTCHAs.
+
+- **First run**: Run `python main.py --setup-sessions` to initialize both YouTube and Instagram profiles. A browser opens automatically — log in manually through the UI, complete any 2FA, then press ENTER in the terminal. The session is saved to `browser_profiles/youtube/` and `browser_profiles/instagram/`.
+- **Subsequent runs**: The saved profile is reused silently. No credentials are entered, no login prompts appear.
+- **Session expiry**: If a session expires, the uploader will prompt for re-login automatically.
+- **Reset**: Delete the `browser_profiles/` directory or remove `.session_ready` files to force re-setup.
+
+## Pipeline Steps
+
+1. **Topic Generation** - Ollama picks a unique coding topic using adaptive category weights (from strategy agent)
+2. **Script Generation** - Ollama writes a 30-60s script with hook, content, and CTA
+3. **Voice Narration** - Kokoro TTS or gTTS converts script to speech
+4. **Image Generation** - ComfyUI Flux generates vertical images; falls back to themed placeholders
+5. **Caption Generation** - SRT subtitles synced to narration timing
+6. **Video Assembly** - FFmpeg creates 1080x1920 video with zoom/pan, subtitles, and background music
+7. **Upload** - Playwright (primary) or PyAutoGUI (fallback) uploads to YouTube Shorts and Instagram Reels
+
+## Strategy Agent (Weekly Learning)
+
+Every Sunday, the strategy agent:
+
+1. Fetches 7-day analytics for all uploaded videos
+2. Compares top vs low performers by engagement rate
+3. Identifies best/worst categories, hooks, posting times, video lengths
+4. Generates a detailed markdown report at `reports/YYYY-MM-DD-weekly-report.md`
+5. Updates category weights using a rolling 30-day average
+6. Weights influence future topic selection (capped at 50% per category, never zero)
+
+Category weights adjust gradually: `new_weight = (current * 0.7) + (performance_score * 0.3)`
+
+## Storage Cleanup
+
+Every Sunday after analytics, the storage monitor:
+
+1. Checks disk usage and warns at >80% or <100GB free
+2. Monitors temp directory size (warning at >1024MB)
+3. Deletes assets older than 7 days from: images, voices, subtitles, temp, cache, intermediate
+4. Verifies all recent uploads succeeded before deleting
+5. Generates cleanup report at `reports/YYYY-MM-DD-cleanup-report.md`
+
+**Never deleted:** outputs/, database/, reports/, config/, generated models.
+
+## Configuration
+
+| Variable | Default | Description |
+|---|---|---|
+| `OLLAMA_HOST` | `http://localhost:11434` | Ollama API endpoint |
+| `OLLAMA_MODEL` | `qwen3` | LLM model for generation |
+| `COMFYUI_HOST` | `http://localhost:8188` | ComfyUI API endpoint |
+| `NUM_IMAGES` | `10` | Images per video |
+| `SCHEDULE_TIME` | `08:00` | Daily run time (HH:MM) |
+| `MAX_RETRIES` | `3` | Upload retry attempts |
+| `STRATEGY_ENABLED` | `true` | Enable strategy agent |
+| `CLEANUP_ENABLED` | `true` | Enable storage cleanup |
+| `CLEANUP_RETENTION_DAYS` | `7` | Days before deleting temp assets |
+| `STORAGE_WARNING_THRESHOLD` | `80` | Disk usage warning % |
+| `FREE_STORAGE_WARNING_GB` | `100` | Free space warning |
+| `MAX_TEMP_SIZE_MB` | `1024` | Temp folder size limit |
+
+## Database
+
+SQLite database at `database/codeshorts.db` with tables:
+
+- **topics** - Used topics (prevents repeats)
+- **videos** - Video metadata and generation dates
+- **analytics** - Per-video platform performance data
+- **category_weights** - Adaptive weights for topic selection
+- **strategy_reports** - Weekly strategy report history
+- **cleanup_reports** - Cleanup operation history
+
+Database is automatically backed up during weekly maintenance to `database/backups/`.
+
+## Logging
+
+Logs are written to `logs/codeshorts_YYYYMMDD.log` with daily rotation. Console output mirrors file logging.
+
+## Credentials
+
+**Never commit your `.env` file.** Add it to `.gitignore`:
+
+```bash
+echo ".env" >> .gitignore
+```

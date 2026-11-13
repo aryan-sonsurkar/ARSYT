@@ -1,0 +1,36 @@
+# Core
+pydantic>=2.0.0
+pydantic-settings>=2.0.0
+python-dotenv>=1.0.0
+requests>=2.31.0
+tenacity>=8.2.0
+
+# Scheduling
+APScheduler>=3.10.0
+
+# LLM (Ollama)
+# Uses direct HTTP API - no extra packages needed
+
+# Voice
+# Kokoro TTS CLI or gTTS fallback
+gtts>=2.5.0
+
+# Video editing
+moviepy>=2.0.0
+Pillow>=10.0.0
+
+# Browser automation (primary upload method)
+playwright>=1.40.0
+
+# Fallback automation
+pyautogui>=0.9.54
+
+# Database
+# SQLite3 is built-in
+
+# ClipFree local REST backend
+fastapi>=0.115.0
+uvicorn[standard]>=0.34.0
+httpx>=0.28.0
+python-multipart>=0.0.20
+faster-whisper>=1.1.0
