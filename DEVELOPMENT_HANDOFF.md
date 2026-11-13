@@ -1,55 +1,79 @@
 # ClipFree Development Handoff
 
-Updated: 2026-11-10
+Updated: 2026-11-13
 
 ## Current state
 
-- Phase 1 and Phase 2 are recorded complete in `IMPLEMENTATION_STATUS.md`.
-- Active phase: Phase 3 transcription implementation; acceptance is still pending.
-- Existing backend and frontend transcription work was found and preserved. This pass removed the undeclared `psutil` import, made the faster-whisper prerequisite explicit, prevents duplicate active project transcriptions, and recovers queued as well as running transcription jobs after restart.
-- Transcription supports local model inventory/download confirmation, automatic or manual language, VAD, segment/word timestamps and confidence fields; JSON/SRT/TXT persistence; searchable transcript with click-to-seek audio; and duration/RTF/sampled peak RAM reporting.
-- With user approval, faster-whisper/CTranslate2 were installed and the small model was downloaded. Local CPU/int8 and CUDA/int8_float16 model-load smoke tests passed (about 1.1 seconds each).
-- Auto device selection retries on CPU/int8 if CUDA libraries fail during inference. The transcript UI shows language confidence and recommends manual language selection below 50%.
+ClipFree is feature-complete for the agreed local-only scope: ingestion → transcription → highlight review → vertical render (burned-in captions, optional music) → metadata/thumbnail → export. All seven phases are recorded as implemented in `IMPLEMENTATION_STATUS.md`, with a real end-to-end run and focused tests.
 
-## Changed files
+- Repository: `codeshortsbot/` (now a Git repo). Remote: `https://github.com/aryan-sonsurkar/ARSYT.git`.
+- Frontend: Next.js 14 at `http://127.0.0.1:3000`.
+- Backend: FastAPI at `http://127.0.0.1:8026`.
+- Ollama: `http://127.0.0.1:11434`, default model `gemma3:4b`.
+- Data: `clipfree_data/` (Git-ignored), separate from legacy `database/codeshorts.db`.
+- Python: project `.venv`, Python 3.11.9.
 
-- `backend/transcription.py`
-- `backend/main.py`
-- `requirements.txt`
-- `tests/test_clipfree_transcription.py`
-- `frontend/src/lib/api.ts`
-- `frontend/src/components/transcription-panel.tsx`
-- `frontend/src/app/globals.css`
-- `.vscode/tasks.json` (frontend build task)
-- `IMPLEMENTATION_STATUS.md`
-- `TECHNICAL_ARCHITECTURE.md`
-- `SETUP_GUIDE.md`
-- `KNOWN_ISSUES.md`
+## What was built
 
-## Validation and blockers
+Backend modules: `ingestion.py`, `transcription.py`, `ollama.py`, `highlights.py`, `captions.py`, `reframe.py`, `presets.py`, `media.py`, `rendering.py`, `metadata.py`, `thumbnails.py`, `exporting.py`, plus extended `main.py` and `database.py`.
 
-- Python interpreter: project `.venv`, Python 3.11.9.
-- FFmpeg/FFprobe are available on PATH.
-- faster-whisper/CTranslate2 and the small model are installed in the project environment. `nvidia-smi` is not on PATH, but NVML reports one CUDA device with 6 GiB total memory; psutil is not required.
-- pytest and the small backend test dependencies were installed into the project environment to run focused tests.
-- Pylance reports no errors in the changed Python/TypeScript files.
-- Focused backend tests pass: 15 passed. The frontend production build passes. A FastAPI test-client check confirmed API startup, engine availability, and local small-model inventory.
-- A 3-second synthetic video fixture passed project creation, upload, FFprobe, FFmpeg WAV extraction, and persisted `source_ready` state.
-- A real 8m49s video from Downloads passed project creation, upload, probing, WAV extraction, transcription, timestamp range checks, and JSON/SRT/TXT file checks. CPU/int8 completed in 344.5 seconds, RTF 0.651, peak RAM delta 1,023,287,296 bytes, VRAM delta 0. Its 74-word/15-segment result had auto-detected Kannada confidence 0.3834 and was not usable enough to certify acceptance.
-- CUDA model loading succeeds, but actual CUDA inference fails because `cublas64_12.dll` cannot be loaded. Auto mode retries the source on CPU; explicit CUDA remains an error. NVML reports one 6 GiB device.
+Frontend: new studio shell in `frontend/src/app/page.tsx`, components under `frontend/src/components/studio/`, typed client in `frontend/src/lib/api.ts`, styles in `frontend/src/app/studio.css`.
 
-## Exact next steps
+Tests: `tests/test_clipfree_ingestion.py`, `test_clipfree_transcription.py`, `test_clipfree_studio.py` (**25 passed**), and `tests/e2e_workflow.py` (real media).
 
-1. Test with suitable authorized speech media and compare automatic language detection with the known spoken language; inspect accuracy and timestamps, not only job completion.
-2. Resolve CUDA library compatibility only with approval for any required large CUDA runtime downloads; otherwise keep CPU fallback.
-3. Benchmark model/device choices and confirm a resource-conscious default after usable speech results.
-4. Re-run focused backend tests (`pytest -q tests/test_clipfree_transcription.py tests/test_clipfree_ingestion.py`) and the frontend production build (`cd frontend; npm run build`) after any fixes.
-5. Continue to Phase 4 only after Phase 3 transcript-quality acceptance.
+## Validation evidence
+
+- Phase 3 quality: `test.wav` English 99.4%; `voices/19_narration.wav` English 99.9%, 5 segments/68 words, RTF 0.159 with VAD on.
+- Full E2E project `4d954e71d3174d2bbe21c54f772c0196`:
+  - 6 m 16 s English podcast, 1280×720, 124 MB.
+  - Transcript 986 words/79 segments, RTF 0.1427 on `small`/CPU/int8.
+  - 4 candidates from `gemma3:4b` in 44.9 s.
+  - 3 clips created, 2 rendered: 25.14 s/9.9 MB and 20.38 s/8.1 MB.
+  - Metadata generated; single export and project ZIP (`E2E_Local_Podcast-9ea803.zip`) succeeded.
+- Captions visually confirmed burned into an extracted frame.
+- Frontend production build (`npm run build`) succeeds.
+
+## Key decisions and gotchas
+
+- Default Whisper model is `small` because it is the only installed/validated model; do not silently download others.
+- Captions are burned with FFmpeg `ass=filename=...` and `cwd=clip_dir` to avoid Windows path-escaping problems.
+- Batch routes must be declared before parameterized routes such as `/api/candidates/{id}/{state}` and `/api/clips/{id}/render`.
+- OpenCV 5 has no Haar cascades; reframing falls back to centre crop. Do not downgrade OpenCV.
+- Renders and heavy transcription are serialized; keep `CLIPFREE_RENDER_CONCURRENCY=1` on this laptop.
+- `CLIPFREE_DATA_DIR`, `CLIPFREE_OLLAMA_URL`, `CLIPFREE_WHISPER_MODEL`, `CLIPFREE_RENDER_CONCURRENCY` are the main operational overrides.
+- Git ignores `.env`, `clipfree_data/`, `temp/`, `node_modules/`, `.next/`, logs, databases and generated media. `.env.example` is committed.
 
 ## Restart commands
 
-Backend: `python -m uvicorn backend.main:app --host 127.0.0.1 --port 8026`
+Backend:
 
-Frontend, in a second terminal: `cd frontend; npm run dev`
+```powershell
+.\.venv\Scripts\python.exe -m uvicorn backend.main:app --host 127.0.0.1 --port 8026
+```
 
-Only the explicitly approved small Whisper model has been downloaded. No external AI service is used by this transcription path.
+Frontend:
+
+```powershell
+cd frontend
+npm run dev
+```
+
+Production frontend: `npm run build` then `npm run start`.
+
+## Verification commands
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest -q tests/test_clipfree_ingestion.py tests/test_clipfree_transcription.py tests/test_clipfree_studio.py
+.\.venv\Scripts\python.exe tests/e2e_workflow.py
+cd frontend; npm run build
+```
+
+The E2E script expects `temp/e2e_podcast.mp4` (regenerate with `scripts/generate_test_podcast.py`) and a running backend + Ollama.
+
+## Remaining/optional work
+
+1. Add a modern face detector (YuNet/MediaPipe) to restore smart reframe on OpenCV 5.
+2. Add resumable uploads and SSE-driven UI updates.
+3. Improve metadata/hashtag tuning with a larger local model if hardware allows (benchmark first).
+4. Optional: add a Windows task/launcher for one-command startup.
+5. Keep the legacy CodeShortsBot pipeline intact; do not migrate its data into ClipFree.

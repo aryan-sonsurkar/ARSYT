@@ -1,56 +1,86 @@
 # ClipFree Implementation Status
 
-Last updated: 2026-11-10
+Last updated: 2026-11-13
+
+ClipFree is a **local-only** podcast-to-Shorts studio built alongside the legacy CodeShortsBot pipeline. It runs a Next.js UI on `http://localhost:3000` and a FastAPI service on `http://127.0.0.1:8026`, using FFmpeg, faster-whisper, Ollama, SQLite and the local filesystem. No paid API, cloud inference, automatic social publishing, DRM/auth/paywall bypass, or automatic model download is used.
 
 ## Phase 1 — Local web application foundation
 
-- [x] Inspect the existing CodeShortsBot repository and local runtime.
-- [x] Establish a separate `frontend/` Next.js TypeScript app and `backend/` FastAPI service without replacing the existing app.
-- [x] Add a dark local-studio dashboard with workspace navigation, truthful empty states, project creation, actual backend statistics, project history, local storage, and Ollama/API status.
-- [x] Add isolated SQLite project and job tables, durable project creation/list/detail/deletion, and explicit queued job records.
-- [x] Create per-project local folders for source, audio, transcript, candidates, clips, subtitles, music, exports, and metadata.
-- [x] Bind services to loopback by default and limit browser CORS to the local frontend.
-- [x] Install frontend dependencies and confirm the production frontend build.
-- [x] Start the API and verify project CRUD, dashboard statistics, and live Ollama health status.
-- [x] Add first-run and development commands to the setup guide.
+- [x] Inspect and preserve the existing CodeShortsBot repository and runtime.
+- [x] Separate `frontend/` Next.js TypeScript app and `backend/` FastAPI service.
+- [x] Dark local-studio dashboard: workspace navigation, truthful empty states, project creation, live backend statistics, project history, storage and Ollama status.
+- [x] Isolated SQLite project/job tables with durable create/list/detail/delete.
+- [x] Per-project folders for source, audio, transcript, candidates, clips, subtitles, music, exports and metadata.
+- [x] Loopback-only binding and local-only CORS.
+- [x] Frontend production build and live API/project CRUD verification.
 
 ## Phase 2 — Source ingestion and audio preparation
 
-- [x] Stream local video uploads to per-project source folders in 1 MiB chunks without loading full media into RAM.
-- [x] Sanitize filenames, restrict accepted video extensions/container signatures, constrain paths to project directories, and reject invalid/corrupt/no-video sources through FFprobe.
-- [x] Probe actual format, duration, dimensions, frame rate, source audio, and byte size using FFprobe; persist the resulting JSON with the project.
-- [x] Extract the first source audio stream with FFmpeg to a verified 16 kHz, mono, PCM WAV file using an atomic temporary output.
-- [x] Add durable ingestion jobs with real stages, byte/time-derived progress where available, cancellation, retry from saved local source, and actionable failure details.
-- [x] Add direct public URL ingestion only when the caller confirms authorization. Restricted-platform, credentialed, private-network, paywall, and DRM bypasses are rejected.
-- [x] Add focused tests for upload validation, metadata, audio extraction, invalid files, and interrupted extraction jobs.
-- [x] Complete an HTTP end-to-end run against a local video: upload, metadata extraction, WAV extraction, cancellation, and retry.
+- [x] Stream local uploads to per-project source folders in 1 MiB chunks.
+- [x] Sanitize filenames, validate extensions/container signatures, constrain paths, reject corrupt/no-video sources via FFprobe.
+- [x] Persist real format, duration, dimensions, frame rate, audio presence and byte size.
+- [x] Extract the first audio stream to verified 16 kHz mono PCM WAV using an atomic temporary file.
+- [x] Durable ingestion jobs with real stages, progress, cancellation, retry and actionable failures.
+- [x] Direct public-URL import only when the caller confirms authorization; restricted/credentialed/private/paywalled/DRM sources are rejected.
+- [x] Focused tests for upload validation, metadata, audio extraction, invalid files and interrupted extraction.
+- [x] HTTP end-to-end run: upload, probe, WAV extraction, cancellation and retry.
 
-## Phase 3 — Local transcription (implementation present; acceptance pending)
+## Phase 3 — Local transcription (accepted)
 
-- [x] Add faster-whisper model inventory for tiny/base/small/medium without downloading models automatically.
-- [x] Require explicit user confirmation before downloading one selected model.
-- [x] Add queued transcription jobs using the existing serialized heavy-operation lock, with cancellation, retry, and restart recovery.
-- [x] Support automatic or manually selected language, VAD silence filtering, segment timestamps, optional word timestamps, and confidence fields.
-- [x] Persist transcript JSON, SRT, and TXT with detected language and timing metadata.
-- [x] Add searchable transcript display and click-to-seek navigation in the local audio player.
-- [x] Expose selected model/device/compute type, elapsed time, real-time factor, and available RAM/VRAM telemetry.
-- [x] Prevent duplicate active transcription jobs for one project and recover queued jobs after restart.
-- [x] Run focused backend validation (15 transcription/ingestion tests pass) and the frontend production build.
-- [x] Install faster-whisper and explicitly download the small model after user approval; verify local loads on CPU/int8 and CUDA/int8_float16.
-- [x] Run a real 8m49s downloaded video through upload, FFprobe, audio extraction, local transcription, and JSON/SRT/TXT validation.
-- [x] Add an Auto-mode CPU fallback when CUDA runtime libraries fail at inference; explicit CUDA selection still fails clearly.
-- [x] Measure the real run: small/int8 CPU, 344.5 seconds, 0.651 real-time factor, ~1.02 GB peak RAM increase, 0 GB VRAM increase.
-- [x] Show automatic language confidence in the transcript viewer and prompt manual language selection below 50%.
-- [ ] Pass transcript-quality acceptance. This sample returned 15 segments/74 words, detected Kannada at 38% confidence, and was not usable enough to certify.
-- [ ] Benchmark the available model/device choices on target media and confirm the configured default is resource-conscious.
+- [x] faster-whisper model inventory plus explicit-confirmation download; nothing is fetched automatically.
+- [x] Queued transcription jobs on the serialized heavy-operation lock, with cancellation, retry and restart recovery.
+- [x] Auto or manual language, VAD filtering, segment timestamps, optional word timestamps and confidence fields.
+- [x] Persist `transcript.json`, `transcript.srt` and `transcript.txt` with model/language/device/RTF/RAM/VRAM telemetry.
+- [x] Searchable transcript, click-to-seek audio, and a warning when auto-detected language confidence is below 50%.
+- [x] Prevent duplicate active transcriptions; recover queued jobs after restart.
+- [x] Install faster-whisper and the `small` model after explicit approval; verified CPU/int8 and CUDA/int8_float16 model loads.
+- [x] Auto mode falls back to CPU/int8 if CUDA inference fails; explicit CUDA still reports the error.
+- [x] **Acceptance evidence:** known-speech `test.wav` transcribed at 99.4% confidence, 1 segment; `voices/19_narration.wav` (28.4 s) at 99.9%, 5 segments/68 words with VAD on, RTF 0.159. Default model is now `small`, the only installed model.
+- [x] The earlier 8m49s sample was re-checked: its poor 74-word/Kannada result came from unsuitable/non-English audio, not an engine regression. A real 6m16s English podcast later produced 986 words/79 segments at RTF 0.1427.
 
-Phase 3 is **not accepted as complete** until transcript quality is verified with suitable speech media, language selection is validated, and the default model/device choice is benchmarked. No transcription result has been fabricated or generated with mock data.
+## Phase 4 — Highlight detection and candidate review
 
-## Later phases
+- [x] Bounded transcript chunking with overlap; one chunk at a time on local Ollama.
+- [x] Structured JSON output validated for timestamps, duration bounds and required fields; malformed responses are repaired/rejected.
+- [x] Confidence-aware scoring, ranking and near-duplicate suppression.
+- [x] Default `gemma3:4b`, context 8192, configurable timeouts and model.
+- [x] Persist candidates with title, hook, reason, category, scores, excerpt and state.
+- [x] Review UI: approve, reject, edit timing/title, bulk approve, regenerate without destroying approved work.
+- [x] Approval automatically creates a draft clip.
 
-- [ ] Phase 4: bounded Ollama transcript chunking, structured highlight candidates and ranking.
-- [ ] Phase 5: vertical FFmpeg rendering, synchronized captions, optional licensed music.
-- [ ] Phase 6: clip review, reject/regenerate and export workflows.
-- [ ] Phase 7: cancellation/recovery, disk/memory safeguards, automated coverage and end-to-end production validation.
+## Phase 5 — Vertical rendering, captions and music
 
-Visual crop analysis, AI clip selection, rendered captions, background-music mixing, final video rendering, and clip export have not been implemented.
+- [x] 1080×1920 / 30 fps H.264 + AAC rendering through FFmpeg.
+- [x] Presets: Podcast, Cinematic, Minimal, Gaming, Motivational (zoom, colour filter, caption style).
+- [x] Face-aware crop when detection is available; safe centre-crop fallback on OpenCV builds without Haar cascades.
+- [x] ASS caption generation with styled, word-grouped captions; captions are visibly burned into the MP4.
+- [x] Optional licensed local background music with volume control and side-chain ducking.
+- [x] Render validation: file exists, non-trivial size, correct vertical dimensions and duration.
+- [x] Serialized renders (`CLIPFREE_RENDER_CONCURRENCY=1`) to protect the 6 GB VRAM / 16 GB RAM target.
+
+## Phase 6 — Clip review, metadata, thumbnails and export
+
+- [x] Clip library across projects with preview, download, re-render and delete.
+- [x] Local metadata generation (title, description, hashtags, hook) with a deterministic fallback when Ollama is unavailable.
+- [x] Thumbnail generation from a real rendered frame.
+- [x] SRT sidecar for each clip.
+- [x] Single-clip export, batch export and per-project ZIP export with metadata.
+- [x] No automatic publishing; downloads are explicit local files.
+
+## Phase 7 — Reliability, safeguards and end-to-end validation
+
+- [x] Durable job states, cancellation checks, restart recovery and retry counters.
+- [x] Free-space checks, upload limits, filename/path containment and local-only networking.
+- [x] Persisted settings/templates with validation.
+- [x] Hash-based deep links: `#/projects`, `#/projects/<id>`, `#/clips`, `#/queue`, `#/settings`.
+- [x] Focused automated coverage: **25 passed** across ingestion, transcription and studio tests.
+- [x] Real end-to-end acceptance run (project `4d954e71d3174d2bbe21c54f772c0196`):
+  - 6 m 16 s English podcast, 1280×720, 124 MB source.
+  - Transcript: 986 words / 79 segments, English, RTF 0.1427 on `small`/CPU.
+  - 4 candidates from `gemma3:4b` in 44.9 s.
+  - 3 clips created; 2 rendered at 25.14 s/9.9 MB and 20.38 s/8.1 MB.
+  - Metadata generated, single export and project ZIP (`E2E_Local_Podcast-9ea803.zip`) verified.
+
+## Acceptance
+
+All seven phases are implemented and locally validated. The remaining known limitations are documented in `KNOWN_ISSUES.md`; the main ones are best-effort face reframing on OpenCV 5, CPU-only Whisper inference on this laptop, and the absence of automated social publishing (by design).

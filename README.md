@@ -2,9 +2,27 @@
 
 Automated daily YouTube Shorts + Instagram Reels generator for coding content, with adaptive content strategy and storage management.
 
-> **ClipFree development:** This repository is evolving into ClipFree, a local podcast-to-shorts production studio. Phase 1 adds a separate Next.js web dashboard and FastAPI/SQLite backend while retaining the existing CodeShortsBot pipeline and data. See [SETUP_GUIDE.md](SETUP_GUIDE.md), [TECHNICAL_ARCHITECTURE.md](TECHNICAL_ARCHITECTURE.md), [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md), and [KNOWN_ISSUES.md](KNOWN_ISSUES.md).
+> **ClipFree:** This repository also contains ClipFree, a complete local podcast-to-Shorts studio. It runs beside the legacy CodeShortsBot pipeline and shares no data with it. See [SETUP_GUIDE.md](SETUP_GUIDE.md), [TECHNICAL_ARCHITECTURE.md](TECHNICAL_ARCHITECTURE.md), [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md), [KNOWN_ISSUES.md](KNOWN_ISSUES.md), and [DEVELOPMENT_HANDOFF.md](DEVELOPMENT_HANDOFF.md).
 
-## Architecture
+## ClipFree quick start
+
+ClipFree is local-only: no paid API, no cloud inference, no automatic publishing.
+
+```powershell
+# Backend (terminal 1)
+.\.venv\Scripts\python.exe -m uvicorn backend.main:app --host 127.0.0.1 --port 8026
+
+# Frontend (terminal 2)
+cd frontend
+npm install
+npm run dev
+```
+
+Open `http://localhost:3000`, create a project, upload an authorized local video, transcribe, review highlight candidates, render vertical clips with burned-in captions, and export. Defaults: `small` Whisper on CPU/int8, `gemma3:4b` for highlights, 1080×1920 output, serialized renders.
+
+ClipFree data lives in `clipfree_data/` and is Git-ignored. See the setup guide for configuration, model approval rules, and troubleshooting.
+
+## Legacy CodeShortsBot architecture
 
 ```
 codeshortsbot/

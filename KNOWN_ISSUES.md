@@ -1,19 +1,53 @@
-# Known Issues and Phase 3 Limits
+# ClipFree Known Issues and Limits
 
-- Browser job status uses five-second REST polling. Cancellation is checked by the worker while streaming and extracting, but the UI can take up to one poll interval to display the final state.
-- Direct URL import supports public direct media files only. It does not support web pages or platform download flows, and it intentionally refuses URL sources that would need DRM, authentication, paywall, or platform-restriction bypassing.
-- The source upload endpoint completes after WAV extraction so a browser request can remain open for large files. The queue still receives durable stage/progress updates; resumable upload is not yet implemented.
-- The worker processes one media ingestion pipeline at a time to fit the target laptop. This avoids competing FFmpeg jobs but queues simultaneous imports.
-- faster-whisper and the small model are installed locally after explicit user approval. A real 8m49s downloaded video was processed through the full workflow, but transcript quality did not pass acceptance: 74 words across 15 segments, Kannada detection confidence 38%.
-- That run used small/int8 CPU in 344.5 seconds (RTF 0.651), with ~1.02 GB peak RAM increase and 0 GB VRAM increase. This source may not contain enough clear speech to benchmark a podcast workflow.
-- CUDA runtime lacked `cublas64_12.dll`; automatic device selection now falls back to CPU. GPU inference remains unverified despite CTranslate2 detecting a CUDA device; no extra CUDA libraries were installed.
-- The default/base, tiny, and medium Whisper models are not installed; only the explicitly selected small model was downloaded.
-- The configured base default has not been benchmarked on this machine; select the production default after a real-media speed/resource comparison.
-- Language detection confidence is shown in the viewer. For confidence below 50%, the UI recommends selecting the spoken language and transcribing again.
-- VRAM telemetry uses Windows NVML when present; other environments without a supported GPU monitoring source show it as unavailable rather than a measured zero.
-- No transcript editing, visual crop analysis, AI clip selection, rendered captions, music mix, final rendering, or clip export exists yet.
-- Dashboard live updates use periodic REST polling. SSE/WebSocket streaming requires the worker lifecycle.
-- Ollama connection status is checked live. Hardware telemetry and per-project disk usage are not yet shown.
-- Empty ClipFree settings are expected until settings persistence is implemented. Existing CodeShortsBot settings remain unchanged.
-- `clipfree_data` can be moved with `CLIPFREE_DATA_DIR`; the target directory must be writable and have adequate local free space.
-- A Google Fonts import is currently used for the visual design; system sans-serif fallbacks are configured.
+Last updated: 2026-11-13
+
+## Rendering and reframing
+
+- **Smart reframe is best-effort.** OpenCV 5.0 removed `CascadeClassifier` and the Haar XML data. `backend/reframe.py` detects this and falls back to a safe centre crop instead of crashing. Face-aware tracking is therefore inactive on the current OpenCV build. Do not downgrade OpenCV just for this; a modern detector (e.g. YuNet) can be added later.
+- Presets change zoom, colour and caption styling, but do not perform scene detection or multi-subject tracking.
+- Captions are generated and burned during render. Editing a clip’s captions or timings requires a re-render.
+- Rendering is serialized (`CLIPFREE_RENDER_CONCURRENCY=1`). Batch renders queue rather than run in parallel, which is intentional on 6 GB VRAM / 16 GB RAM hardware.
+- Render duration depends on source resolution, preset colour filters and CPU. The validated 25 s clip rendered comfortably, but older CPUs will be slower.
+
+## Transcription
+
+- CUDA inference is **unverified** on this laptop: CTranslate2 detects a CUDA device, but the CUDA runtime lacks compatible libraries (e.g. `cublas64_12.dll`). Auto mode falls back to CPU/int8; explicit CUDA reports the error. No large CUDA runtime was downloaded.
+- Only the `small` Whisper model is installed. `tiny`, `base` and `medium` are not present; ClipFree will not download them without explicit confirmation.
+- The earlier 8m49s “failed” sample was unsuitable/non-English audio. Known English samples validate correctly (99.4% and 99.9% confidence). Keep VAD enabled; disabling it can append a hallucinated trailing sentence after silence.
+- Transcription is CPU-only on this machine, so long podcasts take time (validated RTF ≈ 0.14 for a clean 6-minute podcast, but slower hardware/media will vary).
+
+## Highlights and Ollama
+
+- Highlight quality depends on the local model. `gemma3:4b` is the validated default and fits the target hardware; larger models may improve results but increase memory/time.
+- Local models can occasionally return malformed or weak JSON. ClipFree validates, clamps and drops invalid candidates, and the deterministic fallback is intentionally conservative. Always review candidates before rendering.
+- Highlight jobs are serialized per chunk. A long transcript takes multiple Ollama calls (validated: 3 chunks / 44.9 s).
+- Metadata generation falls back to deterministic text when Ollama is unavailable; output will be less creative.
+
+## Ingestion and storage
+
+- Uploads are streamed but not resumable. A dropped browser connection requires starting the import again.
+- The upload request stays open until WAV extraction completes, so large files can appear to “hang” in the browser even while durable job progress advances.
+- Direct URL import supports public direct media files only. It refuses platform pages, authenticated URLs, paywalls, private-network destinations and DRM content; it never attempts a bypass.
+- Project ZIP exports duplicate rendered media under `clipfree_data/exports` and the project folder, so disk use grows with repeated exports.
+- `clipfree_data/` was roughly 775 MB after the validation runs and is Git-ignored.
+
+## UI and operations
+
+- The UI polls the REST API every five seconds. Cancellation or completion can take up to one poll interval to appear. `/api/events` exists but the browser still uses polling as its source of truth.
+- Hash routing (`#/projects/<id>`) supports deep links but is client-side only; there is no server-side route for those paths.
+- If the backend restarts, open the page again or wait for the next poll. Jobs that were running during a crash are marked failed/retryable rather than resumed mid-inference.
+- The Google Fonts import needs network access on first load; system sans-serif fallbacks are configured.
+- Empty states are intentional before the first project/model exists.
+
+## By design
+
+- No automatic publishing to YouTube, Instagram/TikTok or any other platform.
+- No paid APIs, cloud inference, telemetry or uploading of media to third parties.
+- No DRM, authentication, paywall or platform-restriction bypass.
+- No automatic downloads of Whisper models, Ollama models or CUDA packages.
+
+## Legacy CodeShortsBot
+
+- The legacy scheduled pipeline, dashboard, `database/codeshorts.db`, outputs and browser profiles remain separate and are not migrated into ClipFree.
+- Legacy upload automation still exists for the old pipeline; ClipFree does not call it.

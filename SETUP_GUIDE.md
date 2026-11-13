@@ -1,63 +1,125 @@
 # ClipFree Local Setup (Windows)
 
+ClipFree turns an authorized local podcast/interview video into vertical Shorts entirely on this machine. Nothing is uploaded to a paid service and nothing is auto-published.
+
 ## Requirements
 
-- Windows 11, Python 3.11 or newer, and Node.js 20 or newer.
-- FFmpeg and FFprobe on PATH. Source ingestion and WAV extraction use both tools.
-- Ollama is optional during Phase 1. ClipFree never downloads models automatically.
+- Windows 11, Python 3.11+ (validated with 3.11.9), Node.js 20+.
+- FFmpeg and FFprobe on `PATH`.
+- Ollama running locally at `http://127.0.0.1:11434` with `gemma3:4b` pulled.
+- About 6 GB VRAM / 16 GB RAM recommended. CPU-only operation works but is slower.
+- Local `faster-whisper` and a Whisper model. ClipFree never downloads a model without confirmation.
 
-## Start the backend
-
-From the repository root, create a virtual environment if needed and install the existing `requirements.txt` (which includes the FastAPI, Pydantic, and Uvicorn packages used by ClipFree):
+## Install
 
 ```powershell
+cd "C:\path\to\codeshortsbot"
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
-python -m uvicorn backend.main:app --host 127.0.0.1 --port 8026
 ```
 
-The first start creates `clipfree_data/database/clipfree.db` and local project folders. API documentation is at `http://127.0.0.1:8026/docs`.
+`requirements.txt` now includes FastAPI, Uvicorn, faster-whisper, Pillow, NumPy and `opencv-python-headless`. The headless OpenCV build avoids a GUI dependency; OpenCV 5 removed Haar cascades, so reframing falls back to a centre crop (documented in `KNOWN_ISSUES.md`).
 
-The `requirements.txt` manifest includes faster-whisper for Phase 3 transcription. Installing the project requirements installs the engine dependency but does not download any Whisper model. If this dependency has not been installed, the backend can still start and the transcription panel will explain the prerequisite.
-
-## Start the frontend
-
-In another PowerShell window:
+Frontend dependencies:
 
 ```powershell
 cd frontend
 npm install
+```
+
+## Pull the local models (once)
+
+```powershell
+ollama pull gemma3:4b
+```
+
+Transcription models are managed inside ClipFree. The validated model on this laptop is `small` (CPU/int8); it is already installed. If you need another size, open a project and use the transcription model panel — ClipFree asks for confirmation before downloading.
+
+## Start the services
+
+Terminal 1 (backend):
+
+```powershell
+.\.venv\Scripts\python.exe -m uvicorn backend.main:app --host 127.0.0.1 --port 8026
+```
+
+You can also run `.\.venv\Scripts\python.exe -m backend.main`.
+
+Terminal 2 (frontend):
+
+```powershell
+cd frontend
 npm run dev
 ```
 
-Open `http://localhost:3000`. If the backend uses another local URL, set `NEXT_PUBLIC_API_URL` before starting Next.js.
+Open `http://localhost:3000`. API docs: `http://127.0.0.1:8026/docs`.
 
-## Ollama
-
-The dashboard checks `http://127.0.0.1:11434/api/tags`. Override the endpoint with `CLIPFREE_OLLAMA_URL`. Ollama highlight inference is not implemented yet; no Ollama model is downloaded automatically.
-
-## Local transcription
-
-After installing `requirements.txt`, import a video and wait for its source job to finish. In the project's transcription panel, select tiny/base/small/medium. A Whisper model is downloaded only after the user confirms the selected model; the default is `base`. Choose Auto for language detection or enter a language code such as `hi` or `en`. The local worker saves `transcript/transcript.json`, `transcript/transcript.srt`, and `transcript/transcript.txt`.
-
-The transcript viewer supports search and clicking a segment to seek the extracted audio. Job cancellation and retry are available in the processing activity/queue. Transcription time, real-time factor, and sampled peak RAM/VRAM increase are saved with the transcript; VRAM telemetry may be unavailable if NVML is unavailable.
-
-Automatic language confidence is displayed in the transcript viewer. If confidence is below 50%, select the known spoken language and transcribe again. In Auto device mode, a CUDA runtime/library failure during inference retries on CPU/int8; explicitly selecting CUDA reports the GPU error instead of silently switching devices.
-
-## Local data and isolation
-
-Projects and job metadata live in `clipfree_data`. Set `CLIPFREE_DATA_DIR` before starting the API to choose a different local data directory. The existing CodeShortsBot database, outputs and configuration are kept separate.
-
-## Import a source video
-
-Create a project in the browser, then choose a local `.mp4`, `.m4v`, `.mov`, `.mkv`, `.webm`, or `.avi` file. ClipFree streams the source into that project's `source` folder, reads actual media data using FFprobe, and writes `audio/source_audio.wav` as 16 kHz mono PCM.
-
-You can also provide a public direct media URL after confirming you are authorized to process it. ClipFree intentionally rejects platform pages, authenticated URLs, paywalled sources, private-network destinations, and DRM-protected content. Download an authorized local copy through the source's permitted method, then upload that file.
-
-Default limits are 20 GiB per source and 4 GiB free space before an import. Override them only when the storage location can safely hold the source and working WAV:
+For a production frontend build:
 
 ```powershell
-$env:CLIPFREE_MAX_UPLOAD_BYTES = 21474836480
-$env:CLIPFREE_MIN_FREE_BYTES = 4294967296
+cd frontend
+npm run build
+npm run start
 ```
+
+## Workflow
+
+1. **Create a project** and upload an authorized local `.mp4`, `.m4v`, `.mov`, `.mkv`, `.webm` or `.avi` file, or a public direct media URL you are allowed to process.
+2. **Wait for ingestion** — FFprobe metadata, then a 16 kHz mono WAV in `audio/`.
+3. **Transcribe** — choose `small` (default) or another installed model, Auto language (recommended) and VAD on. Outputs land in `transcript/`.
+4. **Find highlights** — ClipFree chunks the transcript and asks local `gemma3:4b` for candidates. Review, edit, approve/reject, then generate clips from approved candidates.
+5. **Render** — pick a preset and caption style, optionally add local music, and render. Captions are burned in; output is 1080×1920 H.264/AAC.
+6. **Finish** — generate metadata/thumbnail, preview, download a single clip, batch-export, or export the whole project as a ZIP.
+
+All results persist in `clipfree_data/` and survive backend restarts.
+
+## Configuration
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `CLIPFREE_DATA_DIR` | `./clipfree_data` | Data root (DB, projects, models, exports) |
+| `CLIPFREE_HOST` / `CLIPFREE_PORT` | `127.0.0.1` / `8026` | API binding |
+| `CLIPFREE_OLLAMA_URL` | `http://127.0.0.1:11434` | Local Ollama endpoint |
+| `CLIPFREE_OLLAMA_TIMEOUT` | `180` | Highlight request timeout (seconds) |
+| `CLIPFREE_HIGHLIGHT_MODEL` | `gemma3:4b` | Highlight/metadata model |
+| `CLIPFREE_WHISPER_MODEL` | `small` | Default transcription model |
+| `CLIPFREE_CLIP_COUNT` | `5` | Suggested clips per run |
+| `CLIPFREE_MIN_CLIP_SECONDS` / `MAX` | `25` / `60` | Candidate duration bounds |
+| `CLIPFREE_RENDER_PRESET` | `podcast` | Default editing preset |
+| `CLIPFREE_CAPTION_STYLE` | `kinetic` | Default caption style |
+| `CLIPFREE_RENDER_CONCURRENCY` | `1` | Parallel renders (keep 1 on 6 GB VRAM) |
+| `CLIPFREE_MAX_UPLOAD_BYTES` | 20 GiB | Per-source upload limit |
+| `CLIPFREE_MIN_FREE_BYTES` | 4 GiB | Required free space before import |
+| `CLIPFREE_EXPORT_DIR` | `./clipfree_data/exports` | Export destination |
+
+## Local transcription notes
+
+- Default is `small` on CPU/int8. `test.wav` and a 28.4 s narration sample validated English detection at 99.4% and 99.9%.
+- A 6 m 16 s English podcast transcribes in roughly 54 s (RTF ≈ 0.14) on this laptop.
+- Auto device falls back to CPU/int8 if CUDA libraries are incomplete; explicitly selecting CUDA reports the real error.
+- Keep VAD on. With VAD off, a trailing hallucinated sentence can appear after silence.
+
+## Rendering notes
+
+- Renders are serialized by default. A 20–25 s clip takes well under a minute on CPU for this source, but complex sources and higher presets vary.
+- Captions are burned into the MP4; the SRT sidecar is still exported.
+- Face tracking is best-effort. OpenCV 5 has no Haar cascade support, so ClipFree uses a safe centre crop instead of failing.
+
+## Data and privacy
+
+- `clipfree_data/` is local and Git-ignored.
+- `.env` is Git-ignored; `.env.example` is committed.
+- ClipFree refuses DRM, credentialed, paywalled, private-network and platform-restriction bypasses.
+- No automatic social publishing.
+
+## Troubleshooting
+
+- **Port in use:** stop the previous process or set `CLIPFREE_PORT`.
+- **Ollama unavailable:** confirm `ollama list` shows `gemma3:4b` and that `http://127.0.0.1:11434/api/tags` responds.
+- **No Whisper model:** open the transcription panel and confirm a model download, or reuse an installed model directory.
+- **CUDA errors:** leave device on Auto; CPU/int8 is the validated path on this laptop.
+- **No captions:** re-render the clip; captions are generated and burned during render, not retroactively.
+- **Stale UI:** the UI polls every 5 seconds; refresh after a backend restart.
+- **Tests:** `.\.venv\Scripts\python.exe -m pytest -q tests/test_clipfree_ingestion.py tests/test_clipfree_transcription.py tests/test_clipfree_studio.py`.
+- **Full E2E:** `.\.venv\Scripts\python.exe tests/e2e_workflow.py` (requires the generated `temp/e2e_podcast.mp4` and a running backend + Ollama).

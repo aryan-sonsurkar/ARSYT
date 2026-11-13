@@ -34,3 +34,9 @@ uvicorn[standard]>=0.34.0
 httpx>=0.28.0
 python-multipart>=0.0.20
 faster-whisper>=1.1.0
+
+# ClipFree vertical rendering / thumbnails
+# Headless build: no GUI stack required. OpenCV 5 removed CascadeClassifier, so
+# face tracking falls back to a safe centre crop (see KNOWN_ISSUES.md).
+opencv-python-headless>=4.9.0
+numpy>=1.26.0
