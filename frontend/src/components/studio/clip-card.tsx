@@ -146,9 +146,15 @@ export function ClipCard({ clip, settings, musicFiles = [], showProject = false,
             {rendered ? (
               <button className="st-icon-action" title="Preview" onClick={() => openDialog("preview")}><Play size={14} /></button>
             ) : null}
-            <button className="secondary-button sm" disabled={busy || active} onClick={() => openDialog("render")}>
-              <WandSparkles size={14} /> {rendered ? "Re-render" : "Render"}
-            </button>
+            {rendered ? (
+              <button className="st-icon-action" title="Re-render clip" aria-label="Re-render clip" disabled={busy || active} onClick={() => openDialog("render")}>
+                <WandSparkles size={14} />
+              </button>
+            ) : (
+              <button className="secondary-button sm" disabled={busy || active} onClick={() => openDialog("render")}>
+                <WandSparkles size={14} /> Render
+              </button>
+            )}
             <button className="st-icon-action" title="Edit metadata" onClick={() => openDialog("metadata")}><Sparkles size={14} /></button>
             {rendered && <a className="st-icon-action" title="Download MP4" href={api.clipDownloadUrl(clip.id)}><Download size={14} /></a>}
             {rendered && <a className="st-icon-action" title="Download SRT" href={api.clipCaptionsUrl(clip.id)}><Captions size={14} /></a>}
