@@ -19,7 +19,7 @@ Backend modules: `ingestion.py`, `transcription.py`, `ollama.py`, `highlights.py
 
 Frontend: new studio shell in `frontend/src/app/page.tsx`, components under `frontend/src/components/studio/`, typed client in `frontend/src/lib/api.ts`, styles in `frontend/src/app/studio.css`.
 
-Tests: `tests/test_clipfree_ingestion.py`, `test_clipfree_transcription.py`, `test_clipfree_studio.py` (**27 passed**), and `tests/e2e_workflow.py` (real media).
+Tests: `tests/test_clipfree_ingestion.py`, `test_clipfree_transcription.py`, `test_clipfree_studio.py` (**28 passed**), and `tests/e2e_workflow.py` (real media).
 
 ## Validation evidence
 
@@ -28,10 +28,10 @@ Tests: `tests/test_clipfree_ingestion.py`, `test_clipfree_transcription.py`, `te
   - 6 m 16 s English podcast, 1280×720, 124 MB.
   - Transcript 986 words/79 segments, RTF 0.1706 on `small`/CPU/int8.
   - 4 candidates from `gemma3:4b` in 53.9 s.
-  - 3 clips created, 2 rendered: 22.97 s/9.07 MB and 36.40 s/14.53 MB (1080×1920 H.264 + AAC 48 kHz stereo).
-  - Metadata generated; single export and project ZIP (`E2E_Local_Podcast-535ba2.zip`, 23.6 MB) succeeded.
+  - 3 clips created, 2 rendered: 22.97 s/9.04 MB and 36.40 s/14.43 MB (1080×1920 H.264 + AAC 48 kHz stereo).
+  - Metadata generated; single export and project ZIP (`E2E_Local_Podcast-6eaade.zip`, 23.4 MB) succeeded.
   - Persistence re-verified after a backend restart: project, transcript, candidates, clips and rendered metadata all survived.
-- Captions visually confirmed burned into extracted frames: opaque white fill, yellow word highlight, no edge clipping.
+- Captions visually confirmed burned into extracted frames: opaque white fill, yellow word highlight, no edge clipping, no overlapping cues.
 - Frontend production build (`npm run build`) succeeds; browser smoke test of Overview/Highlights/Clips reports no console errors.
 
 ## Key decisions and gotchas

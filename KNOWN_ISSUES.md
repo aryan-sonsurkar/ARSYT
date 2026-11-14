@@ -1,12 +1,13 @@
 # ClipFree Known Issues and Limits
 
-Last updated: 2026-11-13
+Last updated: 2026-11-14
 
 ## Rendering and reframing
 
 - **Smart reframe is best-effort.** OpenCV 5.0 removed `CascadeClassifier` and the Haar XML data. `backend/reframe.py` detects this and falls back to a safe centre crop instead of crashing. Face-aware tracking is therefore inactive on the current OpenCV build. Do not downgrade OpenCV just for this; a modern detector (e.g. YuNet) can be added later.
 - Presets change zoom, colour and caption styling, but do not perform scene detection or multi-subject tracking.
 - Captions are generated and burned during render. Editing a clip’s captions or timings requires a re-render.
+- Caption line widths are estimated from an average glyph ratio rather than measured font metrics, so an unusually wide cue can still sit close to the frame edge. Captions auto-shrink and wrap inside the margins, and the estimate can be tuned in `backend/captions.py` if a style needs it.
 - Rendering is serialized (`CLIPFREE_RENDER_CONCURRENCY=1`). Batch renders queue rather than run in parallel, which is intentional on 6 GB VRAM / 16 GB RAM hardware.
 - Render duration depends on source resolution, preset colour filters and CPU. The validated 25 s clip rendered comfortably, but older CPUs will be slower.
 
