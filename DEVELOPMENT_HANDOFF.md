@@ -19,24 +19,28 @@ Backend modules: `ingestion.py`, `transcription.py`, `ollama.py`, `highlights.py
 
 Frontend: new studio shell in `frontend/src/app/page.tsx`, components under `frontend/src/components/studio/`, typed client in `frontend/src/lib/api.ts`, styles in `frontend/src/app/studio.css`.
 
-Tests: `tests/test_clipfree_ingestion.py`, `test_clipfree_transcription.py`, `test_clipfree_studio.py` (**25 passed**), and `tests/e2e_workflow.py` (real media).
+Tests: `tests/test_clipfree_ingestion.py`, `test_clipfree_transcription.py`, `test_clipfree_studio.py` (**27 passed**), and `tests/e2e_workflow.py` (real media).
 
 ## Validation evidence
 
 - Phase 3 quality: `test.wav` English 99.4%; `voices/19_narration.wav` English 99.9%, 5 segments/68 words, RTF 0.159 with VAD on.
-- Full E2E project `4d954e71d3174d2bbe21c54f772c0196`:
+- Full E2E project `5f93f9b2230345678f80e974f59d0332`:
   - 6 m 16 s English podcast, 1280×720, 124 MB.
-  - Transcript 986 words/79 segments, RTF 0.1427 on `small`/CPU/int8.
-  - 4 candidates from `gemma3:4b` in 44.9 s.
-  - 3 clips created, 2 rendered: 25.14 s/9.9 MB and 20.38 s/8.1 MB.
-  - Metadata generated; single export and project ZIP (`E2E_Local_Podcast-9ea803.zip`) succeeded.
-- Captions visually confirmed burned into an extracted frame.
-- Frontend production build (`npm run build`) succeeds.
+  - Transcript 986 words/79 segments, RTF 0.1706 on `small`/CPU/int8.
+  - 4 candidates from `gemma3:4b` in 53.9 s.
+  - 3 clips created, 2 rendered: 22.97 s/9.07 MB and 36.40 s/14.53 MB (1080×1920 H.264 + AAC 48 kHz stereo).
+  - Metadata generated; single export and project ZIP (`E2E_Local_Podcast-535ba2.zip`, 23.6 MB) succeeded.
+  - Persistence re-verified after a backend restart: project, transcript, candidates, clips and rendered metadata all survived.
+- Captions visually confirmed burned into extracted frames: opaque white fill, yellow word highlight, no edge clipping.
+- Frontend production build (`npm run build`) succeeds; browser smoke test of Overview/Highlights/Clips reports no console errors.
 
 ## Key decisions and gotchas
 
 - Default Whisper model is `small` because it is the only installed/validated model; do not silently download others.
 - Captions are burned with FFmpeg `ass=filename=...` and `cwd=clip_dir` to avoid Windows path-escaping problems.
+- ASS text colours must stay opaque (`\c&H00…`): an `&HFF` alpha renders an invisible fill.
+- Long caption lines are auto-shrunk per cue (`\fs`) and wrapped inside the 1080 px frame; keep the width estimate in `backend/captions.py` in sync with the font.
+- FFmpeg reports `out_time_ms=N/A` before the first frame; progress parsing must skip non-numeric values instead of failing the job.
 - Batch routes must be declared before parameterized routes such as `/api/candidates/{id}/{state}` and `/api/clips/{id}/render`.
 - OpenCV 5 has no Haar cascades; reframing falls back to centre crop. Do not downgrade OpenCV.
 - Renders and heavy transcription are serialized; keep `CLIPFREE_RENDER_CONCURRENCY=1` on this laptop.

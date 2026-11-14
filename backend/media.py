@@ -6,7 +6,7 @@ import asyncio
 from pathlib import Path
 from typing import Awaitable, Callable
 
-from backend.ingestion import IngestionError, JobCancelled
+from backend.ingestion import IngestionError, JobCancelled, ffmpeg_progress_seconds
 
 Progress = Callable[[float], Awaitable[None]]
 
@@ -70,8 +70,8 @@ async def run_ffmpeg(
             if not line:
                 break
             key, _, value = line.decode("utf-8", errors="replace").strip().partition("=")
-            if key in {"out_time_us", "out_time_ms"} and duration_seconds > 0:
-                seconds = float(value or 0) / 1_000_000
+            seconds = ffmpeg_progress_seconds(key, value)
+            if seconds is not None and duration_seconds > 0:
                 percent = max(0.0, min(99.0, seconds / duration_seconds * 100.0))
                 if percent - last_reported >= 0.5:
                     last_reported = percent

@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from backend.captions import CaptionOptions, build_ass, clip_srt
+from backend.captions import CaptionOptions, _fit_font_size, build_ass, clip_srt
 from backend.database import connect, get_setting, init_db, now_iso, set_setting
 from backend.highlights import (
     HighlightRequest,
@@ -13,6 +13,7 @@ from backend.highlights import (
     _score_candidate,
     _select_best,
 )
+from backend.ingestion import ffmpeg_progress_seconds
 from backend.metadata import generate_clip_metadata
 from backend.ollama import OllamaError
 from backend.reframe import _piecewise_expression, build_vertical_filter, detect_face_track
@@ -47,6 +48,9 @@ def test_captions_render_word_synchronised_ass_and_clip_relative_srt() -> None:
     assert "Dialogue: 0,0:00:00.00" in ass
     assert "\\pos(540," in ass
     assert "\\c&H" in ass  # current-word highlight colour
+    # Text colours must be opaque; FF alpha would render an invisible fill.
+    assert "\\c&H00" in ass
+    assert "\\c&HFF" not in ass
     assert "Surprising".upper() in ass or "SURPRISING" in ass
     # ASS times are clip-relative, not source-relative.
     assert "0:00:10" not in ass
@@ -55,6 +59,58 @@ def test_captions_render_word_synchronised_ass_and_clip_relative_srt() -> None:
     assert "00:00:00,000 --> 00:00:12,000" in srt
     assert "Your systems decide" in srt
     assert srt.rstrip().endswith("Inspect those systems instead of blaming your personality.")
+
+
+def test_caption_cues_never_overlap_so_glyphs_do_not_stack() -> None:
+    overlapping = {
+        "language": "en",
+        "duration_seconds": 20.0,
+        "segments": [{
+            "start": 0.0, "end": 20.0, "text": "one two three four five six",
+            "words": [
+                {"start": 0.0, "end": 1.6, "word": "one"},
+                {"start": 1.4, "end": 2.2, "word": "two"},
+                {"start": 2.0, "end": 3.1, "word": "three"},
+                {"start": 3.0, "end": 4.0, "word": "four"},
+                {"start": 3.9, "end": 5.0, "word": "five"},
+                {"start": 4.8, "end": 6.0, "word": "six"},
+            ],
+        }],
+    }
+    ass = build_ass(overlapping, 0.0, 20.0, "kinetic", CaptionOptions())
+
+    def to_seconds(stamp: str) -> float:
+        hours, minutes, seconds = stamp.split(":")
+        return int(hours) * 3600 + int(minutes) * 60 + float(seconds)
+
+    spans = []
+    for line in ass.splitlines():
+        if not line.startswith("Dialogue:"):
+            continue
+        head = line[len("Dialogue:"):].split(",,", 1)[0].split(",")
+        spans.append((to_seconds(head[1]), to_seconds(head[2])))
+    assert spans
+    for index in range(1, len(spans)):
+        assert spans[index][0] >= spans[index - 1][1] - 1e-6
+
+
+def test_long_caption_lines_shrink_to_stay_inside_the_frame() -> None:
+    assert _fit_font_size("OK", 76) == 76
+    wide = _fit_font_size("VERY CHEASKED INSTRUCTOR", 76)
+    assert wide < 76
+    # Even extreme words never collapse below the readability floor.
+    assert _fit_font_size("X" * 80, 76) >= int(76 * 0.62)
+    ass = build_ass(TRANSCRIPT, 10.0, 58.0, "kinetic", CaptionOptions())
+    assert "\\fs76" in ass or "\\fs7" in ass  # per-event size tag present
+
+
+def test_ffmpeg_progress_skips_unavailable_timestamps() -> None:
+    # FFmpeg writes N/A before the first frame; a render must not abort on it.
+    assert ffmpeg_progress_seconds("out_time_ms", "N/A") is None
+    assert ffmpeg_progress_seconds("out_time_us", "") is None
+    assert ffmpeg_progress_seconds("frame", "12") is None
+    assert ffmpeg_progress_seconds("out_time_ms", "2500000") == 2.5
+    assert ffmpeg_progress_seconds("out_time_us", "900000") == 0.9
 
 
 def test_reframe_uses_safe_centre_crop_without_face_track() -> None:

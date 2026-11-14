@@ -26,6 +26,21 @@ ALLOWED_EXTENSIONS = {".mp4", ".m4v", ".mov", ".mkv", ".webm", ".avi"}
 ProgressCallback = Callable[[float], Awaitable[None]]
 
 
+def ffmpeg_progress_seconds(key: str, value: str) -> float | None:
+    """Return elapsed seconds from an FFmpeg ``-progress`` pair, if usable.
+
+    FFmpeg writes ``N/A`` for ``out_time_ms``/``out_time_us`` until the first
+    frame or audio sample is muxed, so non-numeric values must be skipped
+    rather than crashing an otherwise healthy process.
+    """
+    if key not in {"out_time_us", "out_time_ms"}:
+        return None
+    try:
+        return float(value) / 1_000_000
+    except (TypeError, ValueError):
+        return None
+
+
 class IngestionError(RuntimeError):
     """A source could not be safely ingested or processed."""
 
@@ -269,8 +284,8 @@ async def extract_wav_audio(
             if not line:
                 break
             key, _, value = line.decode("utf-8", errors="replace").strip().partition("=")
-            if key == "out_time_ms" and duration_seconds:
-                seconds = float(value or 0) / 1_000_000
+            seconds = ffmpeg_progress_seconds(key, value)
+            if seconds is not None and duration_seconds:
                 await progress(min(98.0, 65.0 + max(0.0, min(1.0, seconds / duration_seconds)) * 33.0))
         return_code = await process.wait()
         stderr = await stderr_task

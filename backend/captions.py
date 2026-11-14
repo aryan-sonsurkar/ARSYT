@@ -74,7 +74,7 @@ class CaptionOptions:
         return base
 
 
-def _ass_color(hex_color: str, opacity: int = 0) -> str:
+def _ass_color(hex_color: str, opacity: int = 100) -> str:
     cleaned = hex_color.strip().lstrip("#")
     if len(cleaned) == 3:
         cleaned = "".join(char * 2 for char in cleaned)
@@ -87,6 +87,24 @@ def _ass_color(hex_color: str, opacity: int = 0) -> str:
     opacity = max(0, min(100, int(opacity)))
     alpha = int(round(255 * (1 - opacity / 100)))
     return f"&H{alpha:02X}{blue:02X}{green:02X}{red:02X}"
+
+
+CAPTION_WIDTH = 1080
+CAPTION_SIDE_MARGIN = 60
+# Arial Bold averages ~0.74 em per glyph. Combined with smart wrapping this
+# keeps captions inside the frame even when a line runs longer than expected.
+GLYPH_WIDTH_RATIO = 0.74
+MIN_FONT_SCALE = 0.62
+
+
+def _fit_font_size(text: str, font_size: int) -> int:
+    """Shrink a caption line so it fits the 1080 px frame instead of clipping."""
+    available = max(120, CAPTION_WIDTH - CAPTION_SIDE_MARGIN * 2)
+    estimated = max(1.0, len(text)) * font_size * GLYPH_WIDTH_RATIO
+    if estimated <= available:
+        return font_size
+    scaled = int(font_size * available / estimated)
+    return max(int(font_size * MIN_FONT_SCALE), min(font_size, scaled))
 
 
 def _ass_time(seconds: float) -> str:
@@ -218,7 +236,7 @@ def build_ass(
         "ScriptType: v4.00+",
         "PlayResX: 1080",
         "PlayResY: 1920",
-        "WrapStyle: 2",
+        "WrapStyle: 0",
         "ScaledBorderAndShadow: yes",
         "YCbCr Matrix: TV.709",
         "",
@@ -230,24 +248,34 @@ def build_ass(
         "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text",
     ]
 
-    for cue in cues:
+    for cue_index, cue in enumerate(cues):
         cue_start = cue[0]["start"]
         cue_end = max(cue[-1]["end"], cue_start + 0.35)
         cue_text = " ".join(word["word"] for word in cue)
         min_duration = len(cue_text) / 17.0
         if cue_end - cue_start < min_duration:
             cue_end = min(words[-1]["end"], cue_start + min_duration)
+        # Whisper word ends can trail the next word's start, so clamp each cue
+        # to the next cue's start; otherwise two captions render on top of
+        # each other and the glyphs overlap.
+        if cue_index + 1 < len(cues):
+            cue_end = min(cue_end, cues[cue_index + 1][0]["start"])
+        cue_end = max(cue_end, cue_start + 0.05)
         if uppercase:
             rendered_words = [word["word"].upper() for word in cue]
         else:
             rendered_words = [word["word"] for word in cue]
+        cue_font = _fit_font_size(" ".join(rendered_words), font_size)
 
         if word_highlight:
+            previous_end = cue_start
             for index, word in enumerate(cue):
-                event_start = cue_start if index == 0 else word["start"]
+                event_start = cue_start if index == 0 else max(word["start"], previous_end)
                 event_end = cue[index + 1]["start"] if index + 1 < len(cue) else cue_end
+                event_end = min(event_end, cue_end)
                 if event_end - event_start < 0.05:
                     event_end = event_start + 0.05
+                previous_end = event_end
                 parts = []
                 for word_index, rendered in enumerate(rendered_words):
                     color = highlight if word_index == index else primary
@@ -255,7 +283,7 @@ def build_ass(
                 animation = ""
                 if pop:
                     animation = f"\\fscx86\\fscy86\\t(0,{int(90 * speed)},\\fscx100\\fscy100)"
-                text = f"{{\\an5\\pos(540,{y})\\fad(35,35){animation}}}" + " ".join(parts)
+                text = f"{{\\an5\\pos(540,{y})\\fs{cue_font}\\fad(35,35){animation}}}" + " ".join(parts)
                 lines.append(f"Dialogue: 0,{_ass_time(event_start)},{_ass_time(event_end)},Clip,,0,0,0,,{text}")
         else:
             animation = ""
@@ -263,7 +291,7 @@ def build_ass(
                 animation = f"\\fad(180,180)\\fscx100\\fscy100\\t(0,{int(260 * speed)},\\fsp2)"
             else:
                 animation = "\\fad(80,60)"
-            text = f"{{\\an5\\pos(540,{y}){animation}}}" + _escape(" ".join(rendered_words))
+            text = f"{{\\an5\\pos(540,{y})\\fs{cue_font}{animation}}}" + _escape(" ".join(rendered_words))
             lines.append(f"Dialogue: 0,{_ass_time(cue_start)},{_ass_time(cue_end)},Clip,,0,0,0,,{text}")
 
     return "\n".join(lines) + "\n"

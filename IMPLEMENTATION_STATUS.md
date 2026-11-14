@@ -1,6 +1,6 @@
 # ClipFree Implementation Status
 
-Last updated: 2026-11-13
+Last updated: 2026-11-14
 
 ClipFree is a **local-only** podcast-to-Shorts studio built alongside the legacy CodeShortsBot pipeline. It runs a Next.js UI on `http://localhost:3000` and a FastAPI service on `http://127.0.0.1:8026`, using FFmpeg, faster-whisper, Ollama, SQLite and the local filesystem. No paid API, cloud inference, automatic social publishing, DRM/auth/paywall bypass, or automatic model download is used.
 
@@ -73,13 +73,17 @@ ClipFree is a **local-only** podcast-to-Shorts studio built alongside the legacy
 - [x] Free-space checks, upload limits, filename/path containment and local-only networking.
 - [x] Persisted settings/templates with validation.
 - [x] Hash-based deep links: `#/projects`, `#/projects/<id>`, `#/clips`, `#/queue`, `#/settings`.
-- [x] Focused automated coverage: **25 passed** across ingestion, transcription and studio tests.
-- [x] Real end-to-end acceptance run (project `4d954e71d3174d2bbe21c54f772c0196`):
+- [x] Focused automated coverage: **27 passed** across ingestion, transcription and studio tests.
+- [x] Caption rendering hardened: opaque text colours, per-cue font fitting so long lines stay inside the 1080 px frame, and smart wrapping inside the margins.
+- [x] FFmpeg progress parsing tolerates the `N/A` timestamps FFmpeg emits before the first frame, so renders no longer abort mid-pipeline.
+- [x] Real end-to-end acceptance run (project `5f93f9b2230345678f80e974f59d0332`):
   - 6 m 16 s English podcast, 1280×720, 124 MB source.
-  - Transcript: 986 words / 79 segments, English, RTF 0.1427 on `small`/CPU.
-  - 4 candidates from `gemma3:4b` in 44.9 s.
-  - 3 clips created; 2 rendered at 25.14 s/9.9 MB and 20.38 s/8.1 MB.
-  - Metadata generated, single export and project ZIP (`E2E_Local_Podcast-9ea803.zip`) verified.
+  - Transcript: 986 words / 79 segments, English, RTF 0.1706 on `small`/CPU.
+  - 4 candidates from `gemma3:4b` in 53.9 s.
+  - 3 clips created; 2 rendered at 22.97 s / 9.07 MB and 36.40 s / 14.53 MB (1080×1920 H.264 + AAC 48 kHz stereo).
+  - Captions verified frame by frame: filled white/yellow text burned into the picture, no clipping at the frame edges.
+  - Metadata generated, single export and project ZIP (`E2E_Local_Podcast-535ba2.zip`, 23.6 MB) verified.
+  - Persistence re-checked after a backend restart: project, transcript, 4 candidates, 3 clips and 2 rendered clips with metadata all survived.
 
 ## Acceptance
 
