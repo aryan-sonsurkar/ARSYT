@@ -76,14 +76,14 @@ ClipFree is a **local-only** podcast-to-Shorts studio built alongside the legacy
 - [x] Focused automated coverage: **28 passed** across ingestion, transcription and studio tests.
 - [x] Caption rendering hardened: opaque text colours, per-cue font fitting so long lines stay inside the 1080 px frame, smart wrapping inside the margins, and non-overlapping cue boundaries.
 - [x] FFmpeg progress parsing tolerates the `N/A` timestamps FFmpeg emits before the first frame, so renders no longer abort mid-pipeline.
-- [x] Real end-to-end acceptance run (project `5f93f9b2230345678f80e974f59d0332`):
+- [x] Real end-to-end acceptance run (project `e259be863a784c1f830f3101db4eea63`, run against the shipped commit):
   - 6 m 16 s English podcast, 1280×720, 124 MB source.
-  - Transcript: 986 words / 79 segments, English, RTF 0.1706 on `small`/CPU.
-  - 4 candidates from `gemma3:4b` in 53.9 s.
-  - 3 clips created; 2 rendered at 22.97 s / 9.04 MB and 36.40 s / 14.43 MB (1080×1920 H.264 + AAC 48 kHz stereo).
-  - Captions verified frame by frame: filled white/yellow text burned into the picture, no clipping and no overlapping cues.
-  - Metadata generated, single export and project ZIP (`E2E_Local_Podcast-6eaade.zip`, 23.4 MB) verified.
-  - Persistence re-checked after a backend restart: project, transcript, 4 candidates, 3 clips and 2 rendered clips with metadata all survived.
+  - Transcript: 986 words / 79 segments, English, RTF 0.1702 on `small`/CPU.
+  - 4 candidates from `gemma3:4b` in 52.8 s (3 chunks).
+  - 3 clips created; 2 rendered at 13.10 s / 5.19 MB and 24.27 s / 9.62 MB (1080×1920 H.264 + AAC 48 kHz stereo).
+  - Captions verified frame by frame: filled white/yellow text burned into the picture, no clipping, no overlapping cue events.
+  - Metadata generated, single export and project ZIP (`E2E_Local_Podcast-3f2436.zip`) verified.
+  - Persistence re-checked after a backend restart: project, transcript, candidates, clips and rendered metadata all survived.
 
 ## Acceptance
 

@@ -24,12 +24,12 @@ Tests: `tests/test_clipfree_ingestion.py`, `test_clipfree_transcription.py`, `te
 ## Validation evidence
 
 - Phase 3 quality: `test.wav` English 99.4%; `voices/19_narration.wav` English 99.9%, 5 segments/68 words, RTF 0.159 with VAD on.
-- Full E2E project `5f93f9b2230345678f80e974f59d0332`:
+- Full E2E project `e259be863a784c1f830f3101db4eea63` (run against the shipped commit):
   - 6 m 16 s English podcast, 1280×720, 124 MB.
-  - Transcript 986 words/79 segments, RTF 0.1706 on `small`/CPU/int8.
-  - 4 candidates from `gemma3:4b` in 53.9 s.
-  - 3 clips created, 2 rendered: 22.97 s/9.04 MB and 36.40 s/14.43 MB (1080×1920 H.264 + AAC 48 kHz stereo).
-  - Metadata generated; single export and project ZIP (`E2E_Local_Podcast-6eaade.zip`, 23.4 MB) succeeded.
+  - Transcript 986 words/79 segments, RTF 0.1702 on `small`/CPU/int8.
+  - 4 candidates from `gemma3:4b` in 52.8 s.
+  - 3 clips created, 2 rendered: 13.10 s/5.19 MB and 24.27 s/9.62 MB (1080×1920 H.264 + AAC 48 kHz stereo).
+  - Metadata generated; single export and project ZIP (`E2E_Local_Podcast-3f2436.zip`) succeeded.
   - Persistence re-verified after a backend restart: project, transcript, candidates, clips and rendered metadata all survived.
 - Captions visually confirmed burned into extracted frames: opaque white fill, yellow word highlight, no edge clipping, no overlapping cues.
 - Frontend production build (`npm run build`) succeeds; browser smoke test of Overview/Highlights/Clips reports no console errors.
