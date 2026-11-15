@@ -118,9 +118,29 @@ class RenderStartRequest(BaseModel):
 class BatchClipRequest(BaseModel):
     clip_ids: list[str] = Field(min_length=1, max_length=100)
 
-
 class BatchRenderRequest(BatchClipRequest):
     options: RenderStartRequest = Field(default_factory=RenderStartRequest)
+
+
+class PipelineStartRequest(BaseModel):
+    """Runs transcription, highlights, approval, rendering and export in one job."""
+
+    transcription_model: str = Field(default="", pattern="^(|tiny|base|small|medium)$")
+    language: str | None = Field(default=None, max_length=12)
+    device: str = Field(default="auto", pattern="^(auto|cpu|cuda)$")
+    highlight_model: str = Field(default="", max_length=120)
+    count: int = Field(default=5, ge=1, le=20)
+    min_duration: float = Field(default=25, ge=8, le=120)
+    max_duration: float = Field(default=60, ge=12, le=180)
+    render: RenderStartRequest = Field(default_factory=RenderStartRequest)
+
+    @field_validator("max_duration")
+    @classmethod
+    def duration_order(cls, value: float, info) -> float:
+        minimum = info.data.get("min_duration", 25)
+        if value <= minimum:
+            raise ValueError("max_duration must be greater than min_duration")
+        return value
 
 
 class BatchCandidateRequest(BaseModel):

@@ -19,13 +19,19 @@ Backend modules: `ingestion.py`, `transcription.py`, `ollama.py`, `highlights.py
 
 Frontend: new studio shell in `frontend/src/app/page.tsx`, components under `frontend/src/components/studio/`, typed client in `frontend/src/lib/api.ts`, styles in `frontend/src/app/studio.css`.
 
-Tests: `tests/test_clipfree_ingestion.py`, `test_clipfree_transcription.py`, `test_clipfree_studio.py` (**31 passed**), and `tests/e2e_workflow.py` (real media).
+Tests: `tests/test_clipfree_ingestion.py`, `test_clipfree_transcription.py`, `test_clipfree_studio.py` (**33 passed**), and `tests/e2e_workflow.py` (real media).
 
 ## Natural cut boundaries
 
 `backend/boundaries.py` keeps clips from cutting mid-word or mid-thought. It collects every pause in the transcript (silence between words ≥ 0.35 s) and every sentence end, then moves a requested cut to the nearest one within a small window (ends ±2.0/2.5 s, starts ±1.5/2.0 s; sentence boundaries preferred slightly over pauses; the original timing wins when nothing meaningful is nearby and clips never shrink below their minimum length).
 
 Snapping is applied in three places: `highlights._snap_to_transcript` (AI candidates, candidate edits, manual clips), `ClipService.update_clip` (studio time edits) and `ClipService.run` (a final safety at render time that also persists the aligned times back to the clip). Re-rendering an older clip therefore cleans up its cuts automatically.
+
+## One-click full pipeline
+
+`backend/pipeline.py` (`PipelineService`) runs a whole project in one `pipeline` job: transcription (Whisper `small` by default) → highlight detection with the configured Ollama model → approval of the top-ranked candidates (only when the project has no clips yet) → serialized rendering of every draft clip with the standard render settings → local export of each rendered clip plus a project ZIP written to `clipfree_data/projects/<id>/exports/`.
+
+Every stage is a real job (`transcription`, `highlights`, `render`) that appears in the job list with its own cancel and retry; the parent job mirrors each stage's progress. Stages are idempotent — an existing transcript, existing candidates and already rendered clips are never redone — so starting the pipeline again after a failure resumes where it stopped. Cancelling the pipeline job cancels the active stage, and `recover_interrupted_pipelines()` marks orphaned runs failed on server restart. The studio exposes it via `POST /api/projects/{id}/pipeline` and a "Run full pipeline" button in the project's Overview Pipeline panel; Whisper/Ollama model availability is validated up front so the run fails fast with a clear message.
 
 ## Viral caption writer
 

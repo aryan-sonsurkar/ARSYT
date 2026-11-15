@@ -108,6 +108,16 @@ export function ProjectDetailView({ projectId, onBack, onChanged, onToast }: Pro
     await act("highlights", () => api.startHighlights(projectId, highlightForm), "Highlight detection started with local Ollama.");
   }
 
+  async function runFullPipeline() {
+    if (!window.confirm("Run the full pipeline now? It will transcribe (if needed), find highlights, approve the best moments, render every draft clip and build a project ZIP — all locally.")) return;
+    await act("pipeline", () => api.startPipeline(projectId, {
+      transcription_model: "", language: null, device: "auto",
+      highlight_model: highlightForm.model, count: highlightForm.count,
+      min_duration: highlightForm.min_duration, max_duration: highlightForm.max_duration,
+      render: {},
+    }), "Full pipeline started — every stage runs locally and finished stages are skipped on retry.");
+  }
+
   async function candidateAction(candidateId: string, action: "approve" | "reject" | "reset") {
     await act(`candidate-${candidateId}`, () => api.candidateAction(candidateId, action), `Candidate ${action === "approve" ? "approved — a draft clip was created" : action + "d"}.`);
   }
@@ -267,6 +277,14 @@ export function ProjectDetailView({ projectId, onBack, onChanged, onToast }: Pro
                   <ProgressBar value={activeJobs[0].progress} state={activeJobs[0].state} />
                 </div>
               )}
+              <button
+                className="primary-button"
+                disabled={!sourceReady || activeJobs.length > 0 || Boolean(busy)}
+                onClick={() => void runFullPipeline()}
+              >
+                {busy === "pipeline" ? <Busy label="Starting…" /> : <><WandSparkles size={15} /> Run full pipeline</>}
+              </button>
+              <InlineNote>Transcribes (if needed), finds highlights, approves the best moments, renders every draft clip and builds a project ZIP — in one local run. Finished stages are skipped if you run it again.</InlineNote>
             </Panel>
           </div>
 

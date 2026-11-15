@@ -191,6 +191,10 @@ export const api = {
   audioUrl: (projectId: string) => `${API_URL}/api/projects/${projectId}/media/audio`,
 
   startHighlights: (projectId: string, options: { model: string; count: number; min_duration: number; max_duration: number }) => request<Job>(`/api/projects/${projectId}/highlights`, { method: "POST", body: JSON.stringify(options) }),
+  startPipeline: (projectId: string, options?: Partial<{
+    transcription_model: string; language: string | null; device: "auto" | "cpu" | "cuda";
+    highlight_model: string; count: number; min_duration: number; max_duration: number; render: Record<string, unknown>;
+  }>) => request<Job>(`/api/projects/${projectId}/pipeline`, { method: "POST", body: JSON.stringify(options ?? {}) }),
   updateCandidate: (candidateId: string, payload: Partial<Pick<Candidate, "title" | "hook" | "reason" | "category" | "start_time" | "end_time">>) => request<Candidate>(`/api/candidates/${candidateId}`, { method: "PATCH", body: JSON.stringify(payload) }),
   candidateAction: (candidateId: string, action: "approve" | "reject" | "reset") => request<Candidate>(`/api/candidates/${candidateId}/${action}`, { method: "POST" }),
   batchApprove: (candidateIds: string[]) => request<{ approved: Candidate[]; errors: Array<{ candidate_id: string; error: string }> }>("/api/candidates/batch/approve", { method: "POST", body: JSON.stringify({ candidate_ids: candidateIds }) }),

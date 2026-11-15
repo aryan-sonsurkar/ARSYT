@@ -36,6 +36,7 @@ from backend.ingestion import (
 from backend.jobs import IngestionJobManager
 from backend.metadata import generate_clip_metadata
 from backend.ollama import OllamaError, available_models
+from backend.pipeline import PipelineService, recover_interrupted_pipelines
 from backend.presets import PRESETS
 from backend.rendering import ClipService, RenderRequest, recover_interrupted_renders
 from backend.social import captions_to_json, write_viral_captions
@@ -48,6 +49,7 @@ from backend.schemas import (
     ClipUpdateRequest,
     HighlightStartRequest,
     JobCreate,
+    PipelineStartRequest,
     ProjectCreate,
     RenderStartRequest,
     SettingsUpdate,
@@ -67,6 +69,7 @@ jobs = IngestionJobManager()
 transcription = TranscriptionService(jobs)
 highlights = HighlightService(jobs)
 clips = ClipService(jobs)
+pipeline = PipelineService(jobs, transcription, highlights, clips)
 
 
 @asynccontextmanager
@@ -75,6 +78,7 @@ async def lifespan(_: FastAPI):
     recover_interrupted_transcriptions()
     recover_interrupted_highlights()
     recover_interrupted_renders()
+    recover_interrupted_pipelines()
     export_root().mkdir(parents=True, exist_ok=True)
     yield
 
@@ -442,6 +446,8 @@ async def retry_job(job_id: str) -> dict:
             return await highlights.retry(job_id)
         if kind == "render":
             return await clips.retry(job_id)
+        if kind == "pipeline":
+            return await pipeline.retry(job_id)
         return await jobs.retry(job_id)
     except IngestionError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
@@ -467,6 +473,16 @@ async def download_transcription_model(model_name: str, payload: WhisperDownload
         return {"model": model_name, "installed": True, "path": str(path)}
     except IngestionError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.post("/api/projects/{project_id}/pipeline", status_code=202)
+async def start_pipeline(project_id: str, payload: PipelineStartRequest | None = None) -> dict:
+    """One-click pipeline: transcribe, find highlights, render drafts, export a ZIP."""
+    payload = payload or PipelineStartRequest()
+    try:
+        return await pipeline.start(project_id, payload)
+    except IngestionError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @app.post("/api/projects/{project_id}/transcription", status_code=202)

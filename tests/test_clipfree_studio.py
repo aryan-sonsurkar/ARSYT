@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import json
+import time
+import zipfile
 from pathlib import Path
 
 import pytest
@@ -7,13 +10,15 @@ from fastapi.testclient import TestClient
 
 from backend.boundaries import snap_boundaries
 from backend.captions import CaptionOptions, _fit_font_size, build_ass, clip_srt
-from backend.database import connect, get_setting, init_db, now_iso, set_setting
+from backend.config import settings
+from backend.database import connect, get_setting, init_db, now_iso, row, set_setting
 from backend.highlights import (
     HighlightRequest,
     _dedupe,
     _score_candidate,
     _select_best,
 )
+from backend.rendering import ClipService
 from backend.ingestion import ffmpeg_progress_seconds
 from backend.metadata import generate_clip_metadata
 from backend.ollama import OllamaError
@@ -340,3 +345,128 @@ def test_http_api_creates_project_and_exposes_studio_defaults(tmp_path: Path, mo
 
         deleted = client.delete(f"/api/projects/{project_id}?confirm=true")
         assert deleted.status_code == 204
+
+
+def test_pipeline_start_requires_source_and_rejects_duplicates(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("CLIPFREE_DATA_DIR", str(tmp_path / "pipeline-guard"))
+    from backend.main import app
+
+    with TestClient(app) as client:
+        project_id = client.post("/api/projects", json={"name": "Pipeline Guard"}).json()["id"]
+
+        # Without a local source the pipeline refuses to start.
+        refused = client.post(f"/api/projects/{project_id}/pipeline", json={})
+        assert refused.status_code == 409
+        assert "source" in refused.json()["detail"].lower()
+
+        # A project with an active pipeline run cannot start a second one.
+        active = client.post("/api/projects", json={"name": "Pipeline Busy"}).json()["id"]
+        source = settings.projects_dir / active / "source" / "episode.mp4"
+        source.parent.mkdir(parents=True, exist_ok=True)
+        source.write_bytes(b"0" * 1024)
+        with connect() as conn:
+            conn.execute(
+                "UPDATE projects SET source_path=?,status='source_ready' WHERE id=?", (str(source), active)
+            )
+            conn.execute(
+                "INSERT INTO jobs(id,project_id,kind,state,stage,progress,created_at) VALUES(?,?,?,?,?,?,?)",
+                ("active-pipeline", active, "pipeline", "running", "rendering", 50, now_iso()),
+            )
+        duplicate = client.post(f"/api/projects/{active}/pipeline", json={})
+        assert duplicate.status_code == 409
+        assert "already active" in duplicate.json()["detail"].lower()
+
+
+def test_full_pipeline_skips_finished_stages_and_exports_zip(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("CLIPFREE_DATA_DIR", str(tmp_path / "pipeline-data"))
+    from backend.main import app
+
+    async def fake_render(self: ClipService, job_id: str, clip_id: str, request) -> None:
+        clip = row("SELECT * FROM clips WHERE id=?", (clip_id,))
+        output = settings.projects_dir / clip["project_id"] / "clips" / clip_id / f"{clip_id}.mp4"
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_bytes(b"fake rendered mp4 bytes")
+        with connect() as conn:
+            conn.execute(
+                "UPDATE clips SET state='rendered',output_path=?,duration=20.0,error='',updated_at=? WHERE id=?",
+                (str(output), now_iso(), clip_id),
+            )
+            conn.execute(
+                "UPDATE jobs SET state='completed',stage='done',progress=100,completed_at=?,cancel_requested=0 WHERE id=?",
+                (now_iso(), job_id),
+            )
+
+    monkeypatch.setattr(ClipService, "run", fake_render)
+
+    with TestClient(app) as client:
+        project_id = client.post("/api/projects", json={"name": "Pipeline E2E"}).json()["id"]
+        project_dir = settings.projects_dir / project_id
+        source = project_dir / "source" / "episode.mp4"
+        source.parent.mkdir(parents=True, exist_ok=True)
+        source.write_bytes(b"0" * 2048)
+
+        transcript_dir = project_dir / "transcript"
+        transcript_dir.mkdir(parents=True, exist_ok=True)
+        transcript_path = transcript_dir / "transcript.json"
+        transcript_path.write_text(json.dumps(TRANSCRIPT), encoding="utf-8")
+
+        now = now_iso()
+        with connect() as conn:
+            conn.execute(
+                "INSERT INTO jobs(id,project_id,kind,state,stage,progress,created_at) VALUES(?,?,?,?,?,?,?)",
+                ("seed-job", project_id, "transcription", "completed", "seeded", 100, now),
+            )
+            conn.execute(
+                "UPDATE projects SET source_path=?,source_title='episode',status='source_ready' WHERE id=?",
+                (str(source), project_id),
+            )
+            # Pre-seed transcript and candidates so those stages are skipped.
+            conn.execute(
+                """INSERT INTO transcripts(project_id,job_id,model_name,language,device,compute_type,json_path,srt_path,
+                   text_path,duration_seconds,segment_count,word_count,created_at,updated_at)
+                   VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (project_id, "seed-job", "small", "en", "cpu", "int8", str(transcript_path),
+                 str(transcript_dir / "transcript.srt"), str(transcript_dir / "transcript.txt"),
+                 60.0, 3, 24, now, now),
+            )
+            for index, (start, end, title, score) in enumerate([
+                (10.0, 40.0, "First moment", 90), (22.0, 58.0, "Second moment", 80),
+            ]):
+                conn.execute(
+                    """INSERT INTO candidates(id,project_id,start_time,end_time,title,hook,reason,category,scores_json,
+                       overall_score,excerpt,state,selected,source,created_at,updated_at)
+                       VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    (f"cand-{index}", project_id, start, end, title, "hook", "reason", "Motivational",
+                     '{"hook": 9}', score, "excerpt", "candidate", 1, "ollama:test", now, now),
+                )
+
+        started = client.post(f"/api/projects/{project_id}/pipeline", json={"count": 2})
+        assert started.status_code == 202, started.text
+        job = started.json()
+        assert job["kind"] == "pipeline"
+        job_id = job["id"]
+
+        final = None
+        for _ in range(60):
+            final = client.get(f"/api/jobs/{job_id}").json()
+            if final["state"] in {"completed", "failed", "cancelled"}:
+                break
+            time.sleep(0.25)
+        assert final is not None and final["state"] == "completed", final
+        result = json.loads(final.get("payload_json") or "{}").get("result", {})
+        assert result.get("rendered") == 2
+
+        clips = client.get(f"/api/clips?project_id={project_id}").json()
+        assert len(clips) == 2 and all(clip["state"] == "rendered" for clip in clips)
+
+        zips = list((project_dir / "exports").glob("*.zip"))
+        assert len(zips) == 1
+        with zipfile.ZipFile(zips[0]) as archive:
+            names = archive.namelist()
+        assert any(name.endswith(".mp4") for name in names)
+
+        # The ZIP is downloadable through the project export endpoint.
+        download = client.get(
+            f"/api/projects/{project_id}/export/download?name={zips[0].name}"
+        )
+        assert download.status_code == 200
