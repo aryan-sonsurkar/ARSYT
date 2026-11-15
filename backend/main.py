@@ -39,6 +39,7 @@ from backend.ollama import OllamaError, available_models
 from backend.pipeline import PipelineService, recover_interrupted_pipelines
 from backend.presets import PRESETS
 from backend.rendering import ClipService, RenderRequest, recover_interrupted_renders
+from backend.thumbnails import create_thumbnail
 from backend.social import captions_to_json, write_viral_captions
 from backend.schemas import (
     BatchCandidateRequest,
@@ -753,6 +754,18 @@ async def regenerate_metadata(clip_id: str) -> dict:
     output_dir = Path(clip.get("output_path") or "").parent
     if output_dir.is_dir():
         (output_dir / "metadata.json").write_text(json.dumps(generated, ensure_ascii=False, indent=2), encoding="utf-8")
+    # Keep the burned-in thumbnail text in sync with the new metadata hook.
+    output = Path(clip.get("output_path") or "")
+    if output.is_file():
+        thumbnail_path = output_dir / "thumbnail.jpg"
+        try:
+            await asyncio.to_thread(
+                create_thumbnail, output, thumbnail_path,
+                str(generated.get("thumbnail_text") or clip.get("title") or "Clip"),
+                min(1.2, (float(clip.get("duration") or 4.0)) / 2),
+            )
+        except Exception:
+            pass
     return generated
 
 

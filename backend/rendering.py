@@ -20,7 +20,6 @@ from backend.metadata import generate_clip_metadata
 from backend.presets import preset
 from backend.reframe import build_vertical_filter, detect_face_track
 from backend.thumbnails import create_thumbnail
-
 RENDER_WIDTH = 1080
 RENDER_HEIGHT = 1920
 
@@ -294,20 +293,22 @@ class ClipService:
                 raise IngestionError("The rendered clip has no audio stream.")
             temporary.replace(output)
 
-            self.jobs.update(job_id, stage="creating thumbnail", progress=91)
-            try:
-                await asyncio.to_thread(create_thumbnail, output, thumbnail_path, clip.get("title") or "Clip", min(1.2, duration / 2))
-            except Exception:
-                thumbnail_path = Path("")
-
             excerpt = self._excerpt(content, start, end)
             metadata_model = request.metadata_model or settings.default_highlight_model
-            self.jobs.update(job_id, stage=f"writing metadata with {metadata_model}", progress=94)
+            self.jobs.update(job_id, stage=f"writing metadata with {metadata_model}", progress=91)
             generated = await asyncio.to_thread(
                 generate_clip_metadata,
                 {"title": clip.get("title"), "category": ""}, excerpt, metadata_model,
             )
             metadata_path.write_text(json.dumps(generated, ensure_ascii=False, indent=2), encoding="utf-8")
+
+            # Thumbnails burn the AI-chosen hook text, so metadata comes first.
+            self.jobs.update(job_id, stage="creating thumbnail", progress=94)
+            thumbnail_text = str(generated.get("thumbnail_text") or clip.get("title") or "Clip")
+            try:
+                await asyncio.to_thread(create_thumbnail, output, thumbnail_path, thumbnail_text, min(1.2, duration / 2))
+            except Exception:
+                thumbnail_path = Path("")
 
             size_bytes = output.stat().st_size
             with connect() as conn:

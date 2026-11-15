@@ -127,8 +127,97 @@ def test_ffmpeg_progress_skips_unavailable_timestamps() -> None:
     assert ffmpeg_progress_seconds("out_time_us", "900000") == 0.9
 
 
-def test_yunet_detector_loads_and_detect_face_track_fails_safe() -> None:
-    # The small YuNet model is fetched into the local models folder once.
+def test_render_writes_metadata_before_thumbnail_and_burns_hook_text(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("CLIPFREE_DATA_DIR", str(tmp_path / "thumb-meta"))
+    import backend.rendering as rendering_module
+    from backend.rendering import ClipService
+
+    order: list[str] = []
+    seen: dict[str, str] = {}
+
+    def fake_metadata(payload, excerpt, model):
+        order.append("metadata")
+        return {"title": "T", "description": "D", "hashtags": ["#Shorts"],
+                "category": "Motivational", "thumbnail_text": "BIG HOOK TEXT"}
+
+    def fake_thumbnail(video_path, output_path, text, timestamp=1.0):
+        order.append("thumbnail")
+        seen["text"] = text
+        output_path.write_bytes(b"jpg")
+        return output_path
+
+    async def fake_render_video(self, job_id, source, temporary, *args, **kwargs):
+        order.append("video")
+        Path(temporary).write_bytes(b"fake mp4")
+
+    def fake_probe(path, *args, **kwargs):
+        info = {
+            "duration_seconds": 60.0, "file_size_bytes": 1024,
+            "video": {"width": 1920, "height": 1080}, "audio": {"available": True},
+        }
+        if "partial" in Path(str(path)).name:
+            info["duration_seconds"] = 25.0
+            info["video"] = {"width": 1080, "height": 1920}
+        return info
+
+    monkeypatch.setattr(rendering_module, "generate_clip_metadata", fake_metadata)
+    monkeypatch.setattr(rendering_module, "create_thumbnail", fake_thumbnail)
+    monkeypatch.setattr(rendering_module, "probe_media", fake_probe)
+    monkeypatch.setattr(ClipService, "_render_video", fake_render_video)
+
+    from backend.main import app
+    with TestClient(app) as client:
+        project_id = client.post("/api/projects", json={"name": "Thumb Meta"}).json()["id"]
+        project_dir = settings.projects_dir / project_id
+        source = project_dir / "source" / "episode.mp4"
+        source.parent.mkdir(parents=True, exist_ok=True)
+        source.write_bytes(b"0" * 2048)
+        transcript_dir = project_dir / "transcript"
+        transcript_dir.mkdir(parents=True, exist_ok=True)
+        transcript_path = transcript_dir / "transcript.json"
+        transcript_path.write_text(json.dumps(TRANSCRIPT), encoding="utf-8")
+        now = now_iso()
+        clip_id = "clip-thumb-test"
+        with connect() as conn:
+            conn.execute("INSERT INTO jobs(id,project_id,kind,state,stage,progress,created_at) VALUES(?,?,?,?,?,?,?)",
+                         ("seed-job", project_id, "transcription", "completed", "seeded", 100, now))
+            conn.execute("UPDATE projects SET source_path=?,status='source_ready' WHERE id=?", (str(source), project_id))
+            conn.execute(
+                """INSERT INTO transcripts(project_id,job_id,model_name,language,device,compute_type,json_path,srt_path,
+                   text_path,duration_seconds,segment_count,word_count,created_at,updated_at)
+                   VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (project_id, "seed-job", "small", "en", "cpu", "int8", str(transcript_path),
+                 str(transcript_dir / "t.srt"), str(transcript_dir / "t.txt"), 60.0, 3, 24, now, now),
+            )
+            conn.execute(
+                """INSERT INTO clips(id,project_id,title,start_time,end_time,state,created_at,updated_at)
+                   VALUES(?,?,?,?,?,?,?,?)""",
+                (clip_id, project_id, "Hook test", 10.0, 35.0, "draft", now, now),
+            )
+
+        started = client.post(f"/api/clips/{clip_id}/render", json={"smart_reframe": False})
+        assert started.status_code == 202, started.text
+        job_id = started.json()["id"]
+        final = None
+        for _ in range(80):
+            final = client.get(f"/api/jobs/{job_id}").json()
+            if final["state"] in {"completed", "failed", "cancelled"}:
+                break
+            time.sleep(0.1)
+        assert final is not None and final["state"] == "completed", (final or {}).get("error") or final
+
+    # Metadata is generated first so the thumbnail can burn its hook text.
+    assert order == ["video", "metadata", "thumbnail"]
+    assert seen["text"] == "BIG HOOK TEXT"
+    clip = row("SELECT * FROM clips WHERE id=?", (clip_id,))
+    assert clip["state"] == "rendered"
+    assert json.loads(clip["metadata_json"])["thumbnail_text"] == "BIG HOOK TEXT"
+    assert clip["thumbnail_path"] and Path(clip["thumbnail_path"]).is_file()
+
+
+def test_yunet_detector_loads_and_detect_face_track_fails_safe() -> None:    # The small YuNet model is fetched into the local models folder once.
     model = ensure_yunet_model()
     if model is None:
         pytest.skip("YuNet model download unavailable in this environment.")
