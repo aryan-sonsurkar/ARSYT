@@ -19,7 +19,7 @@ Backend modules: `ingestion.py`, `transcription.py`, `ollama.py`, `highlights.py
 
 Frontend: new studio shell in `frontend/src/app/page.tsx`, components under `frontend/src/components/studio/`, typed client in `frontend/src/lib/api.ts`, styles in `frontend/src/app/studio.css`.
 
-Tests: `tests/test_clipfree_ingestion.py`, `test_clipfree_transcription.py`, `test_clipfree_studio.py` (**36 passed**), and `tests/e2e_workflow.py` (real media).
+Tests: `tests/test_clipfree_ingestion.py`, `test_clipfree_transcription.py`, `test_clipfree_studio.py` (**37 passed**), and `tests/e2e_workflow.py` (real media).
 
 ## YuNet face detection
 
@@ -32,6 +32,10 @@ Tests: `tests/test_clipfree_ingestion.py`, `test_clipfree_transcription.py`, `te
 ## Language picker and Hindi captions
 
 The transcription panel's free-text language field is now a dropdown of common podcast languages (auto-detect, English, Hindi/Hinglish, Marathi, Bengali, Tamil, Telugu, Urdu, Gujarati, Punjabi plus major world languages); the chosen code flows through the existing `language` field. Caption rendering auto-detects Devanagari characters in the clip's transcript and switches the ASS style font to **Nirmala UI** (ships with Windows) while disabling uppercasing for those cues, so Hindi/Hinglish captions render correctly instead of tofu boxes; English captions keep the style's own font.
+
+## Platform caption presets
+
+`CaptionOptions.platform` (`youtube` / `reels`) shifts captions above the platform's UI overlays: `_position_y` adds a 150 px bottom margin for Reels because Instagram's username/caption/music strip covers more of the lower frame than the YouTube Shorts interface. The render dialog exposes it as a "Platform safe area" dropdown and stores it in the clip's caption options, so re-renders keep the choice.
 
 ## Natural cut boundaries
 

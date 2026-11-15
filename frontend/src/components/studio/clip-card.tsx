@@ -34,6 +34,7 @@ export function ClipCard({ clip, settings, musicFiles = [], showProject = false,
   const [music, setMusic] = useState(clip.music_path || "");
   const [volume, setVolume] = useState(clip.music_volume ?? settings?.values.background_music_volume ?? 0.18);
   const [fps, setFps] = useState(30);
+  const [platform, setPlatform] = useState<"youtube" | "reels">("youtube");
   const [smart, setSmart] = useState(settings?.values.smart_reframe ?? true);
   const [ducking, setDucking] = useState(true);
   const [metadataModel, setMetadataModel] = useState(settings?.values.metadata_model ?? "");
@@ -46,6 +47,7 @@ export function ClipCard({ clip, settings, musicFiles = [], showProject = false,
     if (next === "render") {
       setPreset(clip.preset || settings?.values.render_preset || "podcast");
       setStyle(clip.caption_style || settings?.values.caption_style || "kinetic");
+      setPlatform((clip.caption_options as { platform?: string } | null)?.platform === "reels" ? "reels" : "youtube");
       setMusic(clip.music_path || "");
       setVolume(clip.music_volume ?? settings?.values.background_music_volume ?? 0.18);
       setSmart(settings?.values.smart_reframe ?? true);
@@ -69,7 +71,7 @@ export function ClipCard({ clip, settings, musicFiles = [], showProject = false,
     setBusy(true); setError("");
     try {
       await api.renderClip(clip.id, {
-        preset, caption_style: style, caption_options: clip.caption_options ?? {},
+        preset, caption_style: style, caption_options: { ...(clip.caption_options ?? {}), platform },
         music_path: music, music_volume: volume, fps, ducking, metadata_model: metadataModel, smart_reframe: smart,
       });
       onToast("Render queued. Progress is live in the queue.");
@@ -248,6 +250,12 @@ export function ClipCard({ clip, settings, musicFiles = [], showProject = false,
             <Field label="Caption style">
               <select value={style} onChange={(event) => setStyle(event.target.value)}>
                 {(settings?.caption_styles ?? [{ id: "kinetic", label: "Kinetic" }]).map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
+              </select>
+            </Field>
+            <Field label="Platform safe area" hint="Reels UI covers more of the lower frame, so captions sit higher.">
+              <select value={platform} onChange={(event) => setPlatform(event.target.value as "youtube" | "reels")}>
+                <option value="youtube">YouTube Shorts</option>
+                <option value="reels">Instagram Reels</option>
               </select>
             </Field>
             <Field label="Frame rate">

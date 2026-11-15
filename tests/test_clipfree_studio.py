@@ -9,7 +9,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from backend.boundaries import snap_boundaries
-from backend.captions import CaptionOptions, _fit_font_size, build_ass, clip_srt
+from backend.captions import CaptionOptions, _fit_font_size, _position_y, build_ass, clip_srt
 from backend.config import settings
 from backend.database import connect, get_setting, init_db, now_iso, row, set_setting
 from backend.highlights import (
@@ -215,6 +215,19 @@ def test_render_writes_metadata_before_thumbnail_and_burns_hook_text(
     assert clip["state"] == "rendered"
     assert json.loads(clip["metadata_json"])["thumbnail_text"] == "BIG HOOK TEXT"
     assert clip["thumbnail_path"] and Path(clip["thumbnail_path"]).is_file()
+
+
+def test_platform_presets_lift_captions_for_reels_safe_area() -> None:
+    options = CaptionOptions(margin_v=260)
+    youtube = build_ass(TRANSCRIPT, 10.0, 58.0, "kinetic", CaptionOptions(platform="youtube", margin_v=260))
+    reels = build_ass(TRANSCRIPT, 10.0, 58.0, "kinetic", CaptionOptions(platform="reels", margin_v=260))
+    youtube_y = _position_y("bottom", 260, "youtube")
+    reels_y = _position_y("bottom", 260, "reels")
+    assert f"\\pos(540,{youtube_y})" in youtube
+    assert f"\\pos(540,{reels_y})" in reels
+    # Reels' UI covers more of the lower frame, so captions sit higher.
+    assert reels_y < youtube_y - 100
+    assert options is not None
 
 
 def test_hindi_captions_use_nirmala_ui_and_skip_uppercasing() -> None:

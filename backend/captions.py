@@ -53,6 +53,7 @@ class CaptionOptions:
     background: str = ""
     background_opacity: int = -1
     position: str = ""
+    platform: str = ""
     animation_speed: float = 1.0
     uppercase: bool | None = None
     max_words: int = 0
@@ -62,7 +63,7 @@ class CaptionOptions:
     def merged(self, style_name: str) -> dict[str, Any]:
         base = dict(CAPTION_STYLES.get(style_name, CAPTION_STYLES["kinetic"]))
         for key in ("font", "font_size", "primary", "highlight", "outline", "shadow", "background",
-                    "background_opacity", "position", "uppercase", "max_words"):
+                    "background_opacity", "position", "platform", "uppercase", "max_words"):
             value = getattr(self, key)
             if value not in ("", -1, 0, None):
                 base[key] = value
@@ -201,12 +202,18 @@ def _group_words(words: list[dict], max_words: int, max_chars: int, max_seconds:
     return cues
 
 
-def _position_y(position: str, margin_v: int) -> int:
+# Platform safe areas: Instagram Reels' UI (username, caption, music strip)
+# covers more of the lower frame than the YouTube Shorts interface.
+PLATFORM_BOTTOM_MARGIN = {"youtube": 0, "reels": 150, "shorts": 0}
+
+
+def _position_y(position: str, margin_v: int, platform: str = "") -> int:
+    extra = PLATFORM_BOTTOM_MARGIN.get(platform, 0)
     if position == "top":
         return 250
     if position == "middle":
-        return 960
-    return 1920 - max(170, margin_v)
+        return 960 - extra // 2
+    return 1920 - max(170, margin_v) - extra
 
 
 def build_ass(
@@ -228,7 +235,7 @@ def build_ass(
     primary = _ass_color(str(style["primary"]))
     highlight = _ass_color(str(style["highlight"]))
     background = _ass_color(str(style["background"]), int(style.get("background_opacity", 0)))
-    y = _position_y(str(style.get("position", "bottom")), int(style.get("margin_v", 260)))
+    y = _position_y(str(style.get("position", "bottom")), int(style.get("margin_v", 260)), str(style.get("platform", "")))
     font_size = int(style["font_size"])
     outline = max(0, int(style["outline"]))
     shadow = max(0, int(style["shadow"]))
