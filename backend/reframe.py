@@ -1,9 +1,98 @@
-"""Practical face-aware vertical reframing with a safe centre-crop fallback."""
+"""Practical face-aware vertical reframing with a safe centre-crop fallback.
+
+Faces are found with the YuNet detector (a 232 KB ONNX model kept in the local
+models folder), which is far more reliable than Haar cascades - especially for
+profile shots and podcast two-camera setups. When YuNet or OpenCV's face
+module is unavailable the classic Haar detector is used, and without any
+detector a deterministic centre crop keeps rendering working.
+"""
 
 from __future__ import annotations
 
+import urllib.request
 from pathlib import Path
 from statistics import median
+
+from backend.config import settings
+
+YUNET_FILENAME = "face_detection_yunet_2023mar.onnx"
+YUNET_URL = (
+    "https://github.com/opencv/opencv_zoo/raw/main/models/face_detection_yunet/"
+    + YUNET_FILENAME
+)
+
+
+def yunet_model_path() -> Path:
+    return settings.data_dir / "models" / "yunet" / YUNET_FILENAME
+
+
+def ensure_yunet_model() -> Path | None:
+    """Return the local YuNet model, downloading it once (~232 KB) if needed."""
+    path = yunet_model_path()
+    if path.is_file() and path.stat().st_size > 100_000:
+        return path
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        partial = path.with_suffix(".partial")
+        with urllib.request.urlopen(YUNET_URL, timeout=30) as response:
+            partial.write_bytes(response.read())
+        if partial.stat().st_size < 100_000:
+            partial.unlink(missing_ok=True)
+            return None
+        partial.replace(path)
+        return path
+    except Exception:
+        return None
+
+
+def _load_yunet(cv2) -> object | None:
+    creator = getattr(cv2, "FaceDetectorYN_create", None)
+    if creator is None:
+        return None
+    model = ensure_yunet_model()
+    if model is None:
+        return None
+    try:
+        return creator(str(model), "", (320, 320), score_threshold=0.6, nms_threshold=0.3)
+    except Exception:
+        return None
+
+
+def _load_haar(cv2):
+    classifier_cls = getattr(cv2, "CascadeClassifier", None)
+    haarcascades = getattr(getattr(cv2, "data", None), "haarcascades", "")
+    cascade_file = Path(haarcascades) / "haarcascade_frontalface_default.xml" if haarcascades else None
+    if classifier_cls is None or cascade_file is None or not cascade_file.is_file():
+        return None
+    cascade = classifier_cls(str(cascade_file))
+    if cascade.empty():
+        return None
+    return cascade
+
+
+def _detect_faces(frame, yunet, haar, width: int, height: int) -> list[tuple[int, int, int, int]]:
+    """Faces as (x, y, w, h); YuNet first, Haar as the classic fallback."""
+    if yunet is not None:
+        try:
+            frame_height, frame_width = frame.shape[:2]
+            yunet.setInputSize((frame_width, frame_height))
+            _, faces = yunet.detect(frame)
+            if faces is not None and len(faces):
+                return [(int(f[0]), int(f[1]), int(f[2]), int(f[3])) for f in faces if f[2] > 0]
+        except Exception:
+            pass
+    if haar is not None:
+        try:
+            import cv2
+            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            found = haar.detectMultiScale(
+                gray, scaleFactor=1.12, minNeighbors=5,
+                minSize=(max(36, width // 24), max(36, height // 24)),
+            )
+            return [tuple(map(int, item)) for item in found]
+        except Exception:
+            return []
+    return []
 
 
 def detect_face_track(video_path: Path, start: float, end: float, sample_fps: float = 1.0) -> list[dict]:
@@ -16,15 +105,9 @@ def detect_face_track(video_path: Path, start: float, end: float, sample_fps: fl
         import cv2
     except Exception:
         return []
-    # OpenCV 5 removed the legacy Haar cascade API. Treat any missing detector
-    # as "no face track" and let the deterministic centre crop take over.
-    classifier_cls = getattr(cv2, "CascadeClassifier", None)
-    haarcascades = getattr(getattr(cv2, "data", None), "haarcascades", "")
-    cascade_file = Path(haarcascades) / "haarcascade_frontalface_default.xml" if haarcascades else None
-    if classifier_cls is None or cascade_file is None or not cascade_file.is_file():
-        return []
-    cascade = classifier_cls(str(cascade_file))
-    if cascade.empty():
+    yunet = _load_yunet(cv2)
+    haar = _load_haar(cv2) if yunet is None else None
+    if yunet is None and haar is None:
         return []
     duration = max(0.1, end - start)
     sample_fps = max(0.25, min(sample_fps, 90 / duration))
@@ -46,12 +129,8 @@ def detect_face_track(video_path: Path, start: float, end: float, sample_fps: fl
             if timestamp > duration + 0.25:
                 break
             height, width = frame.shape[:2]
-            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-            faces = cascade.detectMultiScale(
-                gray, scaleFactor=1.12, minNeighbors=5,
-                minSize=(max(36, width // 24), max(36, height // 24)),
-            )
-            if len(faces):
+            faces = _detect_faces(frame, yunet, haar, width, height)
+            if faces:
                 x, y, w, h = max(faces, key=lambda item: int(item[2]) * int(item[3]))
                 track.append({
                     "time": round(max(0.0, min(duration, timestamp)), 3),

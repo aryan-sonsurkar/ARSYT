@@ -22,7 +22,14 @@ from backend.rendering import ClipService
 from backend.ingestion import ffmpeg_progress_seconds
 from backend.metadata import generate_clip_metadata
 from backend.ollama import OllamaError
-from backend.reframe import _piecewise_expression, build_vertical_filter, detect_face_track
+from backend.reframe import (
+    _piecewise_expression,
+    build_vertical_filter,
+    detect_face_track,
+    ensure_yunet_model,
+    _load_yunet,
+    yunet_model_path,
+)
 from backend.social import write_viral_captions
 
 
@@ -118,6 +125,24 @@ def test_ffmpeg_progress_skips_unavailable_timestamps() -> None:
     assert ffmpeg_progress_seconds("frame", "12") is None
     assert ffmpeg_progress_seconds("out_time_ms", "2500000") == 2.5
     assert ffmpeg_progress_seconds("out_time_us", "900000") == 0.9
+
+
+def test_yunet_detector_loads_and_detect_face_track_fails_safe() -> None:
+    # The small YuNet model is fetched into the local models folder once.
+    model = ensure_yunet_model()
+    if model is None:
+        pytest.skip("YuNet model download unavailable in this environment.")
+    assert model == yunet_model_path() and model.is_file() and model.stat().st_size > 100_000
+    try:
+        import cv2
+    except Exception:
+        pytest.skip("OpenCV is not installed.")
+    if not hasattr(cv2, "FaceDetectorYN_create"):
+        pytest.skip("OpenCV without the face detection module.")
+    detector = _load_yunet(cv2)
+    assert detector is not None
+    # A missing video never crashes - it simply yields no track.
+    assert detect_face_track(Path("does-not-exist.mp4"), 0.0, 5.0) == []
 
 
 def test_reframe_uses_safe_centre_crop_without_face_track() -> None:

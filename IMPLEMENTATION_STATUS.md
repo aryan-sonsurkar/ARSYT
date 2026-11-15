@@ -65,6 +65,7 @@ ClipFree is a **local-only** podcast-to-Shorts studio built alongside the legacy
 - [x] Viral caption writer: five trending caption variants per rendered clip (curiosity gap, contrarian take, number shock, story opener, save & share), written locally from the clip's own transcript, editable in the studio and copyable to the clipboard. Nothing is published automatically.
 - [x] Natural cut boundaries: every clip start and end is re-aligned to the nearest pause or complete sentence in the transcript (`backend/boundaries.py`), applied to AI candidates, manual clips, studio edits and at render time, so clips never cut mid-word or mid-thought.
 - [x] One-click full pipeline: a single `pipeline` job (route `POST /api/projects/{id}/pipeline` and a "Run full pipeline" button in the Overview panel) runs transcription, highlight detection, top-candidate approval, rendering of every draft clip and a project ZIP export end to end. Each stage runs as a real sub-job with its own progress mirrored into the parent, stages are skipped when their output already exists (so a retry resumes where it stopped), and cancelling the pipeline cancels the active stage.
+- [x] YuNet face detection: smart reframe now finds faces with the YuNet ONNX detector (~232 KB, auto-downloaded once into `clipfree_data/models/yunet/`) instead of the Haar cascades that OpenCV 5 removed — far more reliable for podcast framing, with a centre-crop fallback when the model or OpenCV is unavailable.
 - [x] Thumbnail generation from a real rendered frame.
 - [x] SRT sidecar for each clip.
 - [x] Single-clip export, batch export and per-project ZIP export with metadata.
@@ -76,7 +77,7 @@ ClipFree is a **local-only** podcast-to-Shorts studio built alongside the legacy
 - [x] Free-space checks, upload limits, filename/path containment and local-only networking.
 - [x] Persisted settings/templates with validation.
 - [x] Hash-based deep links: `#/projects`, `#/projects/<id>`, `#/clips`, `#/queue`, `#/settings`.
-- [x] Focused automated coverage: **33 passed** across ingestion, transcription and studio tests.
+- [x] Focused automated coverage: **34 passed** across ingestion, transcription and studio tests.
 - [x] Caption rendering hardened: opaque text colours, per-cue font fitting so long lines stay inside the 1080 px frame, smart wrapping inside the margins, and non-overlapping cue boundaries.
 - [x] FFmpeg progress parsing tolerates the `N/A` timestamps FFmpeg emits before the first frame, so renders no longer abort mid-pipeline.
 - [x] Real end-to-end acceptance run (project `e259be863a784c1f830f3101db4eea63`, run against the shipped commit):

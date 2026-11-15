@@ -19,7 +19,11 @@ Backend modules: `ingestion.py`, `transcription.py`, `ollama.py`, `highlights.py
 
 Frontend: new studio shell in `frontend/src/app/page.tsx`, components under `frontend/src/components/studio/`, typed client in `frontend/src/lib/api.ts`, styles in `frontend/src/app/studio.css`.
 
-Tests: `tests/test_clipfree_ingestion.py`, `test_clipfree_transcription.py`, `test_clipfree_studio.py` (**33 passed**), and `tests/e2e_workflow.py` (real media).
+Tests: `tests/test_clipfree_ingestion.py`, `test_clipfree_transcription.py`, `test_clipfree_studio.py` (**34 passed**), and `tests/e2e_workflow.py` (real media).
+
+## YuNet face detection
+
+`backend/reframe.py` now detects faces with OpenCV's `FaceDetectorYN` (YuNet) before falling back to the classic Haar cascade and finally to a deterministic centre crop. The 232 KB ONNX model is fetched once into `clipfree_data/models/yunet/` and reused for every clip; detection runs at ~1 sample/second (capped at 90 samples per clip), picks the largest face per frame and the track is median-smoothed before the piecewise pan/zoom FFmpeg expressions are built. YuNet also works on OpenCV 5 builds where the Haar cascade API no longer exists, so smart reframe is functional again on modern installs.
 
 ## Natural cut boundaries
 
