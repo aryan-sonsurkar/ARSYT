@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
+from backend.boundaries import snap_boundaries
 from backend.captions import CaptionOptions, _fit_font_size, build_ass, clip_srt
 from backend.database import connect, get_setting, init_db, now_iso, set_setting
 from backend.highlights import (
@@ -141,6 +142,40 @@ def test_reframe_builds_bounded_piecewise_pan_for_detected_faces() -> None:
 def test_face_detection_degrades_gracefully_when_opencv_detector_is_missing() -> None:
     # OpenCV 5 removed CascadeClassifier; the render pipeline must still work.
     assert detect_face_track(Path("does-not-exist.mp4"), 0.0, 5.0) == []
+
+
+def test_clip_cuts_snap_to_pauses_and_complete_thoughts() -> None:
+    segments = [
+        {
+            "start": 0.0, "end": 2.6, "text": "One idea lands here.",
+            "words": [
+                {"start": 0.0, "end": 0.4, "word": "One"},
+                {"start": 0.5, "end": 1.0, "word": "idea"},
+                {"start": 1.1, "end": 1.7, "word": "lands"},
+                {"start": 1.8, "end": 2.6, "word": "here."},
+            ],
+        },
+        {
+            "start": 3.4, "end": 6.6, "text": "This second thought keeps going",
+            "words": [
+                {"start": 3.4, "end": 3.7, "word": "This"},
+                {"start": 3.8, "end": 4.4, "word": "second"},
+                {"start": 4.5, "end": 5.1, "word": "thought"},
+                {"start": 5.2, "end": 5.7, "word": "keeps"},
+                {"start": 5.8, "end": 6.6, "word": "going"},
+            ],
+        },
+    ]
+    # An end landing inside a word moves to that word's clean end.
+    assert snap_boundaries(segments, 3.4, 6.2) == (3.4, 6.6)
+    # A mid-thought end completes the sentence instead (with room for a longer clip).
+    assert snap_boundaries(segments, 0.0, 2.0, min_length=2.0) == (0.0, 2.6)
+    # A start landing mid-sentence pulls back to the start of the thought.
+    assert snap_boundaries(segments, 4.0, 6.6) == (3.4, 6.6)
+    # No pause or sentence boundary within reach keeps the requested timing.
+    assert snap_boundaries(segments, 4.9, 5.3, min_length=0.3) == (4.9, 5.3)
+    # Never shrink a clip below the minimum length while snapping.
+    assert snap_boundaries(segments, 0.0, 1.0, min_length=3.0) == (0.0, 1.0)
 
 
 def test_highlight_scoring_snaps_to_real_segments_and_ranks_scores() -> None:

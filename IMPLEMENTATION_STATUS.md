@@ -63,6 +63,7 @@ ClipFree is a **local-only** podcast-to-Shorts studio built alongside the legacy
 - [x] Clip library across projects with preview, download, re-render and delete.
 - [x] Local metadata generation (title, description, hashtags, hook) with a deterministic fallback when Ollama is unavailable.
 - [x] Viral caption writer: five trending caption variants per rendered clip (curiosity gap, contrarian take, number shock, story opener, save & share), written locally from the clip's own transcript, editable in the studio and copyable to the clipboard. Nothing is published automatically.
+- [x] Natural cut boundaries: every clip start and end is re-aligned to the nearest pause or complete sentence in the transcript (`backend/boundaries.py`), applied to AI candidates, manual clips, studio edits and at render time, so clips never cut mid-word or mid-thought.
 - [x] Thumbnail generation from a real rendered frame.
 - [x] SRT sidecar for each clip.
 - [x] Single-clip export, batch export and per-project ZIP export with metadata.
@@ -74,7 +75,7 @@ ClipFree is a **local-only** podcast-to-Shorts studio built alongside the legacy
 - [x] Free-space checks, upload limits, filename/path containment and local-only networking.
 - [x] Persisted settings/templates with validation.
 - [x] Hash-based deep links: `#/projects`, `#/projects/<id>`, `#/clips`, `#/queue`, `#/settings`.
-- [x] Focused automated coverage: **30 passed** across ingestion, transcription and studio tests.
+- [x] Focused automated coverage: **31 passed** across ingestion, transcription and studio tests.
 - [x] Caption rendering hardened: opaque text colours, per-cue font fitting so long lines stay inside the 1080 px frame, smart wrapping inside the margins, and non-overlapping cue boundaries.
 - [x] FFmpeg progress parsing tolerates the `N/A` timestamps FFmpeg emits before the first frame, so renders no longer abort mid-pipeline.
 - [x] Real end-to-end acceptance run (project `e259be863a784c1f830f3101db4eea63`, run against the shipped commit):

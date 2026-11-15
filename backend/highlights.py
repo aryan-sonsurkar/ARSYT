@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from backend.config import settings
+from backend.boundaries import snap_boundaries
 from backend.database import connect, now_iso, row, rows
 from backend.ingestion import IngestionError, JobCancelled
 from backend.jobs import IngestionJobManager
@@ -40,6 +41,8 @@ Rules:
 - Each clip must be {min_duration}-{max_duration} seconds.
 - start_time and end_time must be copied from the timestamped transcript lines below.
 - Choose complete thoughts with a strong hook and a clean ending.
+- The clip must start at the beginning of a thought and end after a complete
+  sentence, never mid-sentence; a short silence in the transcript is ideal.
 - The hook must use wording grounded in the transcript, not a fabricated quote.
 - Categories: {categories}.
 - Scores are integers 0-100 for hook, emotion, clarity, context and value.
@@ -92,7 +95,8 @@ def _snap_to_transcript(segments: list[dict], segment_start: float, segment_end:
     ]
     if not overlapping:
         return None
-    return float(overlapping[0]["start"]), float(overlapping[-1]["end"])
+    start, end = float(overlapping[0]["start"]), float(overlapping[-1]["end"])
+    return snap_boundaries(segments, start, end)
 
 
 def _grounded_hook(hook: str, excerpt: str) -> str:

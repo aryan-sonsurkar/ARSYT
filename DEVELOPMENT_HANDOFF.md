@@ -19,7 +19,13 @@ Backend modules: `ingestion.py`, `transcription.py`, `ollama.py`, `highlights.py
 
 Frontend: new studio shell in `frontend/src/app/page.tsx`, components under `frontend/src/components/studio/`, typed client in `frontend/src/lib/api.ts`, styles in `frontend/src/app/studio.css`.
 
-Tests: `tests/test_clipfree_ingestion.py`, `test_clipfree_transcription.py`, `test_clipfree_studio.py` (**30 passed**), and `tests/e2e_workflow.py` (real media).
+Tests: `tests/test_clipfree_ingestion.py`, `test_clipfree_transcription.py`, `test_clipfree_studio.py` (**31 passed**), and `tests/e2e_workflow.py` (real media).
+
+## Natural cut boundaries
+
+`backend/boundaries.py` keeps clips from cutting mid-word or mid-thought. It collects every pause in the transcript (silence between words ≥ 0.35 s) and every sentence end, then moves a requested cut to the nearest one within a small window (ends ±2.0/2.5 s, starts ±1.5/2.0 s; sentence boundaries preferred slightly over pauses; the original timing wins when nothing meaningful is nearby and clips never shrink below their minimum length).
+
+Snapping is applied in three places: `highlights._snap_to_transcript` (AI candidates, candidate edits, manual clips), `ClipService.update_clip` (studio time edits) and `ClipService.run` (a final safety at render time that also persists the aligned times back to the clip). Re-rendering an older clip therefore cleans up its cuts automatically.
 
 ## Viral caption writer
 

@@ -9,6 +9,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from backend.boundaries import snap_boundaries
 from backend.captions import CaptionOptions, caption_options_from_json, clip_srt, write_ass
 from backend.config import settings
 from backend.database import connect, now_iso, row, rows
@@ -87,6 +88,20 @@ class ClipService:
                 return item
         raise IngestionError("Clip not found.")
 
+    def _transcript_segments(self, project_id: str) -> list[dict]:
+        """Segments for boundary snapping; empty when no transcript is saved."""
+        transcript = row("SELECT * FROM transcripts WHERE project_id=?", (project_id,))
+        if not transcript:
+            return []
+        path = Path(transcript["json_path"])
+        if not path.is_file():
+            return []
+        try:
+            content = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return []
+        return content.get("segments") or []
+
     def update_clip(self, clip_id: str, payload: dict) -> dict:
         clip = row("SELECT * FROM clips WHERE id=?", (clip_id,))
         if not clip:
@@ -112,6 +127,9 @@ class ClipService:
             end = updates.get("end_time", clip["end_time"])
             if end - start < 3:
                 raise IngestionError("A clip must be at least three seconds long.")
+            segments = self._transcript_segments(clip["project_id"])
+            if segments:
+                start, end = snap_boundaries(segments, start, end, min_length=3.0)
             updates["start_time"], updates["end_time"] = round(start, 3), round(end, 3)
         if not updates:
             return self.get_clip(clip_id)
@@ -228,9 +246,19 @@ class ClipService:
             source_duration = float(source_info["duration_seconds"])
             start = max(0.0, min(float(clip["start_time"]), source_duration - 1))
             end = max(start + 1, min(float(clip["end_time"]), source_duration))
-            duration = end - start
-            if duration < 3:
+            if end - start < 3:
                 raise IngestionError("The selected timestamps are outside the source video.")
+            # Align the actual cut with a pause or complete thought so clips
+            # never start mid-word or stop mid-sentence.
+            start, end = snap_boundaries(content.get("segments") or [], start, end, min_length=3.0)
+            end = max(start + 3.0, min(end, source_duration))
+            start = min(start, end - 3.0)
+            duration = end - start
+            with connect() as conn:
+                conn.execute(
+                    "UPDATE clips SET start_time=?, end_time=?, updated_at=? WHERE id=?",
+                    (round(start, 3), round(end, 3), now_iso(), clip_id),
+                )
 
             self.jobs.update(job_id, stage="detecting speaker framing", progress=3)
             track = []
