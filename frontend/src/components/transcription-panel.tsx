@@ -6,6 +6,29 @@ import { api, ApiError, formatBytes, Job, Project, Transcript, WhisperModel } fr
 
 type Props = { project: Project; onJobChange: () => void };
 
+const LANGUAGES: Array<{ code: string; label: string }> = [
+  { code: "", label: "Auto detect" },
+  { code: "en", label: "English" },
+  { code: "hi", label: "Hindi / Hinglish" },
+  { code: "mr", label: "Marathi" },
+  { code: "bn", label: "Bengali" },
+  { code: "ta", label: "Tamil" },
+  { code: "te", label: "Telugu" },
+  { code: "ur", label: "Urdu" },
+  { code: "gu", label: "Gujarati" },
+  { code: "pa", label: "Punjabi" },
+  { code: "es", label: "Spanish" },
+  { code: "pt", label: "Portuguese" },
+  { code: "fr", label: "French" },
+  { code: "de", label: "German" },
+  { code: "ar", label: "Arabic" },
+  { code: "id", label: "Indonesian" },
+  { code: "ru", label: "Russian" },
+  { code: "zh", label: "Chinese" },
+  { code: "ja", label: "Japanese" },
+  { code: "ko", label: "Korean" },
+];
+
 export function TranscriptionPanel({ project, onJobChange }: Props) {
   const [models, setModels] = useState<WhisperModel[]>([]);
   const [engineAvailable, setEngineAvailable] = useState<boolean | null>(null);
@@ -73,7 +96,7 @@ export function TranscriptionPanel({ project, onJobChange }: Props) {
     {project.status !== "source_ready" && <div className="transcription-note">Finish source ingestion before starting transcription.</div>}
     {project.status === "source_ready" && <div className="transcription-controls">
       <label><span>Whisper model</span><select value={model} onChange={(event) => setModel(event.target.value as WhisperModel["name"])}>{models.map((item) => <option key={item.name} value={item.name}>{item.name} · {item.size} {item.installed ? "(installed)" : "(not installed)"}</option>)}</select></label>
-      <label><span>Language</span><input value={language} maxLength={12} onChange={(event) => setLanguage(event.target.value)} placeholder="Auto detect" /></label>
+      <label><span>Language</span><select value={language} onChange={(event) => setLanguage(event.target.value)}>{LANGUAGES.map((item) => <option key={item.code || "auto"} value={item.code}>{item.label}</option>)}</select></label>
       <label><span>Device</span><select value={device} onChange={(event) => setDevice(event.target.value as "auto" | "cpu" | "cuda")}><option value="auto">Auto</option><option value="cuda">NVIDIA GPU</option><option value="cpu">CPU</option></select></label>
       <div className="model-summary"><span>{selected?.description}</span><small>{selected?.memory}</small></div>
       {engineAvailable === false ? <div className="transcription-note">Install the project requirements to enable faster-whisper. Models are downloaded separately only after confirmation.</div> : selected && !selected.installed ? <button className="secondary-button" disabled={busy || engineAvailable === null} onClick={() => void downloadModel()}><Download size={14} /> Download {selected.name}</button> : <button className="primary-button" disabled={busy || engineAvailable === null || Boolean(jobActive)} onClick={() => void start()}>{busy || jobActive ? <LoaderCircle size={15} className="spin" /> : <FileAudio size={15} />} {jobActive ? "Transcription in progress" : "Transcribe audio"}</button>}

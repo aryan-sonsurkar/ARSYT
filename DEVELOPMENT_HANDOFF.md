@@ -19,7 +19,7 @@ Backend modules: `ingestion.py`, `transcription.py`, `ollama.py`, `highlights.py
 
 Frontend: new studio shell in `frontend/src/app/page.tsx`, components under `frontend/src/components/studio/`, typed client in `frontend/src/lib/api.ts`, styles in `frontend/src/app/studio.css`.
 
-Tests: `tests/test_clipfree_ingestion.py`, `test_clipfree_transcription.py`, `test_clipfree_studio.py` (**35 passed**), and `tests/e2e_workflow.py` (real media).
+Tests: `tests/test_clipfree_ingestion.py`, `test_clipfree_transcription.py`, `test_clipfree_studio.py` (**36 passed**), and `tests/e2e_workflow.py` (real media).
 
 ## YuNet face detection
 
@@ -28,6 +28,10 @@ Tests: `tests/test_clipfree_ingestion.py`, `test_clipfree_transcription.py`, `te
 ## Metadata-first thumbnails
 
 `ClipService.run` generates the clip metadata before the thumbnail so the AI-chosen `thumbnail_text` (a 3–6 word hook) is burned onto the thumbnail JPG instead of the plain clip title. Regenerating metadata from the studio (`POST /api/clips/{id}/metadata`) also refreshes the burned-in thumbnail text on the existing render.
+
+## Language picker and Hindi captions
+
+The transcription panel's free-text language field is now a dropdown of common podcast languages (auto-detect, English, Hindi/Hinglish, Marathi, Bengali, Tamil, Telugu, Urdu, Gujarati, Punjabi plus major world languages); the chosen code flows through the existing `language` field. Caption rendering auto-detects Devanagari characters in the clip's transcript and switches the ASS style font to **Nirmala UI** (ships with Windows) while disabling uppercasing for those cues, so Hindi/Hinglish captions render correctly instead of tofu boxes; English captions keep the style's own font.
 
 ## Natural cut boundaries
 

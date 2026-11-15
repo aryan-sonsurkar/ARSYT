@@ -217,6 +217,31 @@ def test_render_writes_metadata_before_thumbnail_and_burns_hook_text(
     assert clip["thumbnail_path"] and Path(clip["thumbnail_path"]).is_file()
 
 
+def test_hindi_captions_use_nirmala_ui_and_skip_uppercasing() -> None:
+    hindi = {
+        "language": "hi",
+        "duration_seconds": 20.0,
+        "segments": [{
+            "start": 0.0, "end": 20.0, "text": "आपकी आदतें आपका भविष्य तय करती हैं।",
+            "words": [
+                {"start": 0.0, "end": 1.4, "word": "आपकी"},
+                {"start": 1.5, "end": 2.8, "word": "आदतें"},
+                {"start": 2.9, "end": 4.2, "word": "आपका"},
+                {"start": 4.3, "end": 5.6, "word": "भविष्य"},
+                {"start": 5.7, "end": 7.0, "word": "तय"},
+                {"start": 7.1, "end": 9.0, "word": "करती"},
+                {"start": 9.1, "end": 10.4, "word": "हैं।"},
+            ],
+        }],
+    }
+    ass = build_ass(hindi, 0.0, 20.0, "kinetic", CaptionOptions())
+    assert "Nirmala UI" in ass
+    assert "आपकी" in ass  # Devanagari text is preserved verbatim
+    # English captions keep the style's own font.
+    english = build_ass(TRANSCRIPT, 10.0, 58.0, "kinetic", CaptionOptions())
+    assert "Nirmala UI" not in english and ",Arial," in english
+
+
 def test_yunet_detector_loads_and_detect_face_track_fails_safe() -> None:    # The small YuNet model is fetched into the local models folder once.
     model = ensure_yunet_model()
     if model is None:

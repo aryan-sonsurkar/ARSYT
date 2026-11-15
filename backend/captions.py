@@ -96,6 +96,15 @@ CAPTION_SIDE_MARGIN = 60
 GLYPH_WIDTH_RATIO = 0.74
 MIN_FONT_SCALE = 0.62
 
+# Latin fonts cannot render Devanagari conjuncts; Nirmala UI ships with
+# Windows and is the reliable choice for Hindi / Hinglish captions.
+DEVANAGARI = re.compile(r"[\u0900-\u097F]")
+NIRMALA_UI = "Nirmala UI"
+
+
+def _script_font(text: str, font: str) -> str:
+    return NIRMALA_UI if DEVANAGARI.search(text) else font
+
 
 def _fit_font_size(text: str, font_size: int) -> int:
     """Shrink a caption line so it fits the 1080 px frame instead of clipping."""
@@ -230,6 +239,11 @@ def build_ass(
     pop = bool(style.get("pop"))
     border_style = 3 if int(style.get("background_opacity", 0)) > 0 else 1
     word_border = outline if border_style == 1 else max(2, outline)
+    # Hindi / Hinglish captions need a Devanagari-capable font.
+    sample = " ".join(word["word"] for word in words)
+    if DEVANAGARI.search(sample):
+        font = NIRMALA_UI
+        uppercase = False
 
     lines = [
         "[Script Info]",
