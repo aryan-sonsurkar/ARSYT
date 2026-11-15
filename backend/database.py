@@ -121,10 +121,20 @@ def init_db() -> None:
                 value TEXT NOT NULL DEFAULT '',
                 updated_at TEXT NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS clip_social (
+                clip_id TEXT PRIMARY KEY REFERENCES clips(id) ON DELETE CASCADE,
+                project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+                variants_json TEXT NOT NULL DEFAULT '[]',
+                model TEXT NOT NULL DEFAULT '',
+                generated_by TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
             CREATE INDEX IF NOT EXISTS idx_projects_updated ON projects(updated_at DESC);
             CREATE INDEX IF NOT EXISTS idx_jobs_created ON jobs(created_at DESC);
             CREATE INDEX IF NOT EXISTS idx_candidates_project ON candidates(project_id, overall_score DESC);
             CREATE INDEX IF NOT EXISTS idx_clips_project ON clips(project_id, created_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_clip_social_project ON clip_social(project_id, updated_at DESC);
         """)
         _add_column_if_missing(conn, "projects", "source_filename", "TEXT NOT NULL DEFAULT ''")
         _add_column_if_missing(conn, "projects", "source_size_bytes", "INTEGER NOT NULL DEFAULT 0")

@@ -85,6 +85,24 @@ class ClipUpdateRequest(BaseModel):
     caption_options: dict | None = None
 
 
+class SocialCaptionRequest(BaseModel):
+    model: str = Field(default="", max_length=120)
+    count: int = Field(default=5, ge=2, le=5)
+
+
+class SocialVariant(BaseModel):
+    style: str = Field(default="", max_length=40)
+    label: str = Field(default="", max_length=60)
+    hook: str = Field(default="", max_length=200)
+    caption: str = Field(default="", max_length=1200)
+    hashtags: list[str] = Field(default_factory=list)
+    cta: str = Field(default="", max_length=200)
+
+
+class SocialSaveRequest(BaseModel):
+    variants: list[SocialVariant] = Field(default_factory=list)
+
+
 class RenderStartRequest(BaseModel):
     preset: str = Field(default="podcast", pattern="^(cinematic|podcast|minimal|gaming|motivational)$")
     caption_style: str = Field(default="", max_length=40)

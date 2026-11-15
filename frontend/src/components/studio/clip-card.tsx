@@ -2,10 +2,10 @@
 
 import { useState } from "react";
 import {
-  Captions, Download, Film, LoaderCircle, Package, PencilLine, Play,
-  Sparkles, Trash2, WandSparkles,
+  Captions, Check, Copy, Download, Film, Flame, LoaderCircle, Package,
+  PencilLine, Play, Sparkles, Trash2, WandSparkles,
 } from "lucide-react";
-import { api, AppSettings, Clip, formatBytes, formatTimestamp, relativeTime } from "@/lib/api";
+import { api, AppSettings, Clip, formatBytes, formatTimestamp, relativeTime, SocialVariant } from "@/lib/api";
 import { Busy, EmptyState, Field, InlineNote, Modal, StatusBadge, Toggle } from "@/components/studio/ui";
 
 type MusicFile = { name: string; size_bytes: number; path: string };
@@ -19,12 +19,15 @@ type Props = {
   onToast: (message: string) => void;
 };
 
-type Dialog = "" | "preview" | "render" | "metadata";
+type Dialog = "" | "preview" | "render" | "metadata" | "social";
 
 export function ClipCard({ clip, settings, musicFiles = [], showProject = false, onChanged, onToast }: Props) {
   const [dialog, setDialog] = useState<Dialog>("");
   const [busy, setBusy] = useState(false);
   const [title, setTitle] = useState(clip.title);
+  const [social, setSocial] = useState<SocialVariant[]>([]);
+  const [socialSource, setSocialSource] = useState("");
+  const [copied, setCopied] = useState("");
 
   const [preset, setPreset] = useState(clip.preset || settings?.values.render_preset || "podcast");
   const [style, setStyle] = useState(clip.caption_style || settings?.values.caption_style || "kinetic");
@@ -50,6 +53,15 @@ export function ClipCard({ clip, settings, musicFiles = [], showProject = false,
       setError("");
     }
     if (next === "metadata") setTitle(clip.title);
+    if (next === "social") {
+      setCopied("");
+      void api.clipSocial(clip.id)
+        .then((result) => {
+          setSocial(result.variants ?? []);
+          setSocialSource(result.generated_by ?? "");
+        })
+        .catch(() => setSocial([]));
+    }
     setDialog(next);
   }
 
@@ -98,6 +110,45 @@ export function ClipCard({ clip, settings, musicFiles = [], showProject = false,
     } catch (cause) {
       onToast(cause instanceof Error ? cause.message : "Export failed.");
     } finally { setBusy(false); }
+  }
+
+  async function generateSocial() {
+    setBusy(true); setError("");
+    try {
+      const result = await api.generateClipSocial(clip.id);
+      setSocial(result.variants ?? []);
+      setSocialSource(result.generated_by ?? "");
+      onToast("New viral captions written with the local model.");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not write the captions.");
+    } finally { setBusy(false); }
+  }
+
+  async function saveSocial() {
+    setBusy(true); setError("");
+    try {
+      await api.saveClipSocial(clip.id, social);
+      onToast("Caption edits saved.");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not save the captions.");
+    } finally { setBusy(false); }
+  }
+
+  async function copyVariant(variant: SocialVariant) {
+    const text = [variant.hook, variant.caption, variant.hashtags.join(" "), variant.cta]
+      .filter(Boolean)
+      .join("\n\n");
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(variant.style);
+      window.setTimeout(() => setCopied(""), 1600);
+    } catch {
+      onToast("Copy failed. Select the text and copy it manually.");
+    }
+  }
+
+  function updateVariant(style: string, patch: Partial<SocialVariant>) {
+    setSocial((current) => current.map((item) => (item.style === style ? { ...item, ...patch } : item)));
   }
 
   async function remove() {
@@ -156,6 +207,7 @@ export function ClipCard({ clip, settings, musicFiles = [], showProject = false,
               </button>
             )}
             <button className="st-icon-action" title="Edit metadata" onClick={() => openDialog("metadata")}><Sparkles size={14} /></button>
+            {rendered && <button className="st-icon-action" title="Viral captions" aria-label="Viral captions" onClick={() => openDialog("social")}><Flame size={14} /></button>}
             {rendered && <a className="st-icon-action" title="Download MP4" href={api.clipDownloadUrl(clip.id)}><Download size={14} /></a>}
             {rendered && <a className="st-icon-action" title="Download SRT" href={api.clipCaptionsUrl(clip.id)}><Captions size={14} /></a>}
             {rendered && <button className="st-icon-action" title="Export package" disabled={busy} onClick={() => void exportClip()}><Package size={14} /></button>}
@@ -257,6 +309,44 @@ export function ClipCard({ clip, settings, musicFiles = [], showProject = false,
             <button className="secondary-button" onClick={() => void regenerateMetadata()} disabled={busy}><Sparkles size={14} /> Regenerate</button>
             <button className="primary-button" onClick={() => void saveTitle()} disabled={busy}>Save title</button>
           </div>
+        </div>
+      </Modal>
+      <Modal open={dialog === "social"} onClose={() => setDialog("")} title="Viral captions" subtitle="Trending caption variants written locally from this clip's own transcript. Nothing is published." width={720}>
+        {social.length === 0 ? (
+          <EmptyState icon={<Flame size={20} />} title="No captions yet">Write trending caption variants for this clip with the local Ollama model.</EmptyState>
+        ) : (
+          <div className="st-social-list">
+            {social.map((variant) => (
+              <section className="st-social-card" key={variant.style}>
+                <header>
+                  <span className="st-social-label">{variant.label || variant.style}</span>
+                  <button className="secondary-button sm" onClick={() => void copyVariant(variant)}>
+                    {copied === variant.style ? <><Check size={13} /> Copied</> : <><Copy size={13} /> Copy</>}
+                  </button>
+                </header>
+                <Field label="Hook">
+                  <input className="form-input" value={variant.hook} onChange={(event) => updateVariant(variant.style, { hook: event.target.value })} />
+                </Field>
+                <Field label="Caption">
+                  <textarea className="form-input" rows={3} value={variant.caption} onChange={(event) => updateVariant(variant.style, { caption: event.target.value })} />
+                </Field>
+                <Field label="Hashtags">
+                  <input className="form-input" value={variant.hashtags.join(" ")} onChange={(event) => updateVariant(variant.style, { hashtags: event.target.value.split(/\s+/).filter(Boolean) })} />
+                </Field>
+                <Field label="Call to action">
+                  <input className="form-input" value={variant.cta} onChange={(event) => updateVariant(variant.style, { cta: event.target.value })} />
+                </Field>
+              </section>
+            ))}
+          </div>
+        )}
+        {error && <InlineNote tone="error">{error}</InlineNote>}
+        <div className="st-modal-actions">
+          <span className="st-social-source">{socialSource ? `written by ${socialSource}` : ""}</span>
+          <button className="secondary-button" onClick={() => void saveSocial()} disabled={busy || social.length === 0}>Save edits</button>
+          <button className="primary-button" onClick={() => void generateSocial()} disabled={busy}>
+            {busy ? <Busy label="Writing…" /> : <><Flame size={15} /> {social.length ? "Rewrite" : "Write captions"}</>}
+          </button>
         </div>
       </Modal>
     </>

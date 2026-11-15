@@ -196,12 +196,18 @@
 .st-clip-body h3 { margin: 1px 0 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; font-weight: 600; }
 .st-clip-project { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #8d7f9e; font-size: 8px; }
 .st-clip-meta { display: flex; flex-wrap: wrap; gap: 4px 9px; color: #766f7e; font: 8px var(--mono); }
-.st-clip-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; margin-top: 3px; padding-top: 8px; border-top: 1px solid var(--line-soft); }
+.st-clip-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-top: 3px; padding-top: 8px; border-top: 1px solid var(--line-soft); }
 .st-clip-actions .secondary-button.sm { white-space: nowrap; }
-.st-icon-action { display: inline-grid; place-items: center; width: 27px; height: 27px; border: 1px solid #332d3b; border-radius: 5px; background: #17131d; color: #a89bb8; cursor: pointer; }
+.st-icon-action { display: inline-grid; place-items: center; width: 25px; height: 25px; border: 1px solid #332d3b; border-radius: 5px; background: #17131d; color: #a89bb8; cursor: pointer; }
 .st-icon-action:hover { border-color: #5b4b70; color: #decaf6; }
 .st-icon-action.danger:hover { border-color: #5c3330; color: #e89a92; background: #201515; }
 .st-icon-action:disabled { opacity: 0.45; cursor: wait; }
+.st-social-list { display: flex; flex-direction: column; gap: 10px; max-height: 58vh; overflow-y: auto; padding-right: 4px; }
+.st-social-card { display: flex; flex-direction: column; gap: 7px; padding: 11px 12px; border: 1px solid #2b2433; border-radius: 8px; background: #100e14; }
+.st-social-card header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.st-social-label { font: 600 9px var(--mono); letter-spacing: 0.09em; text-transform: uppercase; color: #d9a24a; }
+.st-social-source { margin-right: auto; color: #6d6675; font: 8px var(--mono); }
+.st-social-card .st-field small { color: #6d6675; }
 .st-selectable { position: relative; }
 .st-selectable.selected { outline: 1px solid #7c52bf; outline-offset: 2px; border-radius: 9px; }
 .st-selectbox { position: absolute; top: 7px; left: 7px; z-index: 2; cursor: pointer; }

@@ -38,6 +38,7 @@ from backend.metadata import generate_clip_metadata
 from backend.ollama import OllamaError, available_models
 from backend.presets import PRESETS
 from backend.rendering import ClipService, RenderRequest, recover_interrupted_renders
+from backend.social import captions_to_json, write_viral_captions
 from backend.schemas import (
     BatchCandidateRequest,
     BatchClipRequest,
@@ -50,6 +51,8 @@ from backend.schemas import (
     ProjectCreate,
     RenderStartRequest,
     SettingsUpdate,
+    SocialCaptionRequest,
+    SocialSaveRequest,
     TranscriptionStartRequest,
     UrlIngestRequest,
     WhisperDownloadRequest,
@@ -735,6 +738,104 @@ async def regenerate_metadata(clip_id: str) -> dict:
     if output_dir.is_dir():
         (output_dir / "metadata.json").write_text(json.dumps(generated, ensure_ascii=False, indent=2), encoding="utf-8")
     return generated
+
+
+@app.get("/api/clips/{clip_id}/social")
+async def clip_social(clip_id: str) -> dict:
+    """Return the saved viral caption variants for a clip."""
+    try:
+        clips.get_clip(clip_id)
+    except IngestionError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    saved = row("SELECT * FROM clip_social WHERE clip_id=?", (clip_id,))
+    if not saved:
+        return {"clip_id": clip_id, "variants": [], "generated_by": "", "model": "", "updated_at": ""}
+    try:
+        variants = json.loads(saved["variants_json"] or "[]")
+    except (TypeError, ValueError):
+        variants = []
+    return {
+        "clip_id": clip_id,
+        "variants": variants,
+        "generated_by": saved["generated_by"],
+        "model": saved["model"],
+        "updated_at": saved["updated_at"],
+    }
+
+
+@app.post("/api/clips/{clip_id}/social")
+async def generate_clip_social(clip_id: str, payload: SocialCaptionRequest) -> dict:
+    """Write new trending caption variants with the local model."""
+    try:
+        clip = clips.get_clip(clip_id)
+    except IngestionError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    transcript = row("SELECT * FROM transcripts WHERE project_id=?", (clip["project_id"],))
+    if not transcript:
+        raise HTTPException(status_code=409, detail="A transcript is required to write grounded captions.")
+    try:
+        content = json.loads(Path(transcript["json_path"]).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise HTTPException(status_code=500, detail="The transcript file could not be read.") from exc
+    excerpt = " ".join(
+        str(segment.get("text", "")).strip()
+        for segment in content.get("segments", [])
+        if float(segment.get("end", 0)) > clip["start_time"] and float(segment.get("start", 0)) < clip["end_time"]
+    )[:1800]
+    model = payload.model or get_setting(
+        "metadata_model", get_setting("highlight_model", settings.default_highlight_model)
+    )
+    generated = await asyncio.to_thread(
+        write_viral_captions,
+        {"title": clip.get("title"), "duration": clip.get("duration")},
+        excerpt,
+        model,
+        payload.count,
+    )
+    now = now_iso()
+    with connect() as conn:
+        conn.execute(
+            """INSERT INTO clip_social(clip_id,project_id,variants_json,model,generated_by,created_at,updated_at)
+               VALUES(?,?,?,?,?,?,?)
+               ON CONFLICT(clip_id) DO UPDATE SET
+                 variants_json=excluded.variants_json, model=excluded.model,
+                 generated_by=excluded.generated_by, updated_at=excluded.updated_at""",
+            (
+                clip_id, clip["project_id"], json.dumps(generated["variants"], ensure_ascii=False),
+                generated["model"], generated["generated_by"], now, now,
+            ),
+        )
+    output_dir = Path(clip.get("output_path") or "").parent
+    if output_dir.is_dir():
+        (output_dir / "social.json").write_text(
+            captions_to_json({**generated, "clip_id": clip_id, "updated_at": now}), encoding="utf-8"
+        )
+    return {"clip_id": clip_id, **generated, "updated_at": now}
+
+
+@app.post("/api/clips/{clip_id}/social/save")
+async def save_clip_social(clip_id: str, payload: SocialSaveRequest) -> dict:
+    """Persist caption variants the creator edited in the studio."""
+    try:
+        clip = clips.get_clip(clip_id)
+    except IngestionError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    variants = [item.model_dump() for item in payload.variants]
+    if not variants:
+        raise HTTPException(status_code=422, detail="There is nothing to save.")
+    now = now_iso()
+    with connect() as conn:
+        conn.execute(
+            """INSERT INTO clip_social(clip_id,project_id,variants_json,model,generated_by,created_at,updated_at)
+               VALUES(?,?,?,?,?,?,?)
+               ON CONFLICT(clip_id) DO UPDATE SET
+                 variants_json=excluded.variants_json, updated_at=excluded.updated_at""",
+            (
+                clip_id, clip["project_id"], json.dumps(variants, ensure_ascii=False),
+                get_setting("metadata_model", settings.default_highlight_model), "edited", now, now,
+            ),
+        )
+    return {"clip_id": clip_id, "variants": variants, "generated_by": "edited", "updated_at": now}
 
 
 @app.post("/api/clips/batch/export")

@@ -44,6 +44,16 @@ export type ClipMetadata = {
   thumbnail_text?: string; generated_by?: string;
 };
 
+export type SocialVariant = {
+  style: string; label: string; hook: string; caption: string;
+  hashtags: string[]; cta: string;
+};
+
+export type SocialCaptions = {
+  clip_id?: string; variants: SocialVariant[];
+  generated_by?: string; model?: string; updated_at?: string;
+};
+
 export type Clip = {
   id: string; project_id: string; candidate_id?: string | null; project_name?: string;
   title: string; start_time: number; end_time: number; state: string;
@@ -199,6 +209,9 @@ export const api = {
   clipCaptionsUrl: (clipId: string) => `${API_URL}/api/clips/${clipId}/captions`,
   clipMetadata: (clipId: string) => request<ClipMetadata>(`/api/clips/${clipId}/metadata`),
   regenerateMetadata: (clipId: string) => request<ClipMetadata>(`/api/clips/${clipId}/metadata`, { method: "POST" }),
+  clipSocial: (clipId: string) => request<SocialCaptions>(`/api/clips/${clipId}/social`),
+  generateClipSocial: (clipId: string, options?: { model?: string; count?: number }) => request<SocialCaptions>(`/api/clips/${clipId}/social`, { method: "POST", body: JSON.stringify(options ?? {}) }),
+  saveClipSocial: (clipId: string, variants: SocialVariant[]) => request<SocialCaptions>(`/api/clips/${clipId}/social/save`, { method: "POST", body: JSON.stringify({ variants }) }),
   exportClip: (clipId: string) => request<ExportResult>(`/api/clips/${clipId}/export`, { method: "POST" }),
   batchExport: (clipIds: string[]) => request<{ exports: ExportResult[]; errors: Array<{ clip_id: string; error: string }> }>("/api/clips/batch/export", { method: "POST", body: JSON.stringify({ clip_ids: clipIds }) }),
   downloadBatch: (clipIds: string[], filename = "clipfree-clips.zip") => downloadPost("/api/clips/batch/download", { clip_ids: clipIds }, filename),

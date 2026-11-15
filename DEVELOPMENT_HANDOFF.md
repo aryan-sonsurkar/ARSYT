@@ -19,7 +19,17 @@ Backend modules: `ingestion.py`, `transcription.py`, `ollama.py`, `highlights.py
 
 Frontend: new studio shell in `frontend/src/app/page.tsx`, components under `frontend/src/components/studio/`, typed client in `frontend/src/lib/api.ts`, styles in `frontend/src/app/studio.css`.
 
-Tests: `tests/test_clipfree_ingestion.py`, `test_clipfree_transcription.py`, `test_clipfree_studio.py` (**28 passed**), and `tests/e2e_workflow.py` (real media).
+Tests: `tests/test_clipfree_ingestion.py`, `test_clipfree_transcription.py`, `test_clipfree_studio.py` (**30 passed**), and `tests/e2e_workflow.py` (real media).
+
+## Viral caption writer
+
+`backend/social.py` writes five trending caption variants per rendered clip (curiosity gap, contrarian take, number shock, story opener, save & share) with the local Ollama model, grounded in that clip's own transcript excerpt so it never invents facts. A deterministic writer keeps the feature usable when Ollama is offline.
+
+- `GET /api/clips/{id}/social` - saved variants
+- `POST /api/clips/{id}/social` - write new variants (`{"model": "gemma3:4b", "count": 5}`)
+- `POST /api/clips/{id}/social/save` - persist edited variants
+
+In the studio every rendered clip gets a flame action that opens the panel: each variant is editable and has a Copy button that puts the hook, caption, hashtags and CTA on the clipboard. Captions are text only - ClipFree never publishes anything.
 
 ## Validation evidence
 

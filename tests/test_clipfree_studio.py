@@ -17,6 +17,7 @@ from backend.ingestion import ffmpeg_progress_seconds
 from backend.metadata import generate_clip_metadata
 from backend.ollama import OllamaError
 from backend.reframe import _piecewise_expression, build_vertical_filter, detect_face_track
+from backend.social import write_viral_captions
 
 
 TRANSCRIPT = {
@@ -207,6 +208,54 @@ def test_metadata_falls_back_to_grounded_transcript_when_ollama_is_offline(monke
     assert metadata["description"].startswith("Your systems decide")
     assert metadata["hashtags"] == ["#Shorts", "#Podcast", "#Insight"]
     assert metadata["thumbnail_text"] == "HABITS RUN YOUR DAY"
+
+
+def test_viral_captions_are_grounded_and_fall_back_without_ollama(monkeypatch: pytest.MonkeyPatch) -> None:
+    def unavailable(*_args: object, **_kwargs: object) -> dict:
+        raise OllamaError("Ollama offline")
+
+    monkeypatch.setattr("backend.social.chat_json", unavailable)
+    result = write_viral_captions(
+        {"title": "Shark Tank Success Story", "duration": 15},
+        "In 2020, two founders walked onto Shark Tank and rejected a $1 million offer.",
+        "gemma3:4b",
+    )
+    assert result["generated_by"] == "local-fallback"
+    variants = result["variants"]
+    assert len(variants) >= 3
+    styles = [item["style"] for item in variants]
+    assert styles[0] == "curiosity" and "stat" in styles
+    for variant in variants:
+        assert variant["hook"] and variant["caption"] and variant["cta"]
+        assert 3 <= len(variant["hashtags"]) <= 8
+        assert all(tag.startswith("#") for tag in variant["hashtags"])
+    assert "$1 million" in variants[0]["caption"]
+
+
+def test_viral_captions_use_the_local_model_and_reject_malformed_output(monkeypatch: pytest.MonkeyPatch) -> None:
+    good = {
+        "variants": [
+            {
+                "style": "curiosity", "hook": "Why they turned down $1M",
+                "caption": "They said no, and it worked.", "hashtags": ["#SharkTank", "#Business", "#Gum"],
+                "cta": "Save this clip.",
+            },
+            {
+                "style": "contrarian", "hook": "The wrong advice is everywhere",
+                "caption": "Here is what actually happened.", "hashtags": ["#Podcast", "#Money", "#Growth"],
+                "cta": "Share it with a founder.",
+            },
+        ]
+    }
+    monkeypatch.setattr("backend.social.chat_json", lambda *a, **k: good)
+    result = write_viral_captions({"title": "Clip", "duration": 12}, "A transcript excerpt.", "gemma3:4b")
+    assert result["generated_by"] == "ollama"
+    assert result["variants"][0]["hook"] == "Why they turned down $1M"
+    assert result["variants"][0]["label"] == "Curiosity gap"
+
+    monkeypatch.setattr("backend.social.chat_json", lambda *a, **k: {"variants": [{"hook": ""}]})
+    broken = write_viral_captions({"title": "Clip", "duration": 12}, "A transcript excerpt.", "gemma3:4b")
+    assert broken["generated_by"] == "local-fallback"
 
 
 def test_settings_round_trip_and_database_defaults(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
