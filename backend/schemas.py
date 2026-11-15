@@ -113,6 +113,7 @@ class RenderStartRequest(BaseModel):
     ducking: bool = True
     metadata_model: str = Field(default="", max_length=120)
     smart_reframe: bool = True
+    trim_silence: bool = False
 
 
 class BatchClipRequest(BaseModel):

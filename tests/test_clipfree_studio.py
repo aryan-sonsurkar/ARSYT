@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
+from backend.silence import concat_filters, plan_trim
 from backend.boundaries import snap_boundaries
 from backend.captions import CaptionOptions, _fit_font_size, _position_y, build_ass, clip_srt
 from backend.config import settings
@@ -215,6 +216,56 @@ def test_render_writes_metadata_before_thumbnail_and_burns_hook_text(
     assert clip["state"] == "rendered"
     assert json.loads(clip["metadata_json"])["thumbnail_text"] == "BIG HOOK TEXT"
     assert clip["thumbnail_path"] and Path(clip["thumbnail_path"]).is_file()
+
+
+def test_silence_plan_cuts_dead_air_and_retimes_captions() -> None:
+    # 30 s clip with a 5 s dead-air hole between two sentences.
+    content = {
+        "language": "en", "duration_seconds": 60.0,
+        "segments": [
+            {"start": 0.0, "end": 12.0, "text": "First part ends here.",
+             "words": [
+                 {"start": 0.0, "end": 3.0, "word": "First"},
+                 {"start": 3.2, "end": 6.0, "word": "part"},
+                 {"start": 6.2, "end": 9.0, "word": "ends"},
+                 {"start": 9.2, "end": 12.0, "word": "here."},
+             ]},
+            {"start": 17.0, "end": 30.0, "text": "Second part continues.",
+             "words": [
+                 {"start": 17.0, "end": 20.0, "word": "Second"},
+                 {"start": 20.2, "end": 23.0, "word": "part"},
+                 {"start": 23.2, "end": 27.0, "word": "continues."},
+             ]},
+        ],
+    }
+    plan = plan_trim(content, 0.0, 30.0)
+    assert plan is not None
+    pieces = plan["pieces"]
+    # Two pieces: everything up to just after "here." and from just before "Second".
+    assert len(pieces) == 2
+    assert abs(pieces[0][0] - 0.0) < 0.01
+    assert abs(pieces[0][1] - 12.35) < 0.01   # keep 0.35 s of pause after the word
+    assert abs(pieces[1][0] - 16.95) < 0.01   # start just before the next word
+    assert abs(pieces[1][1] - 30.0) < 0.01
+    # The trimmed clip is ~5.4 s shorter and captions are re-timed onto it.
+    assert 24.0 < plan["duration"] < 25.5
+    remapped = plan["content"]["segments"]
+    assert abs(remapped[1]["start"] - 12.4) < 0.05   # 12.35 offset + 0.05 guard
+    assert remapped[1]["words"][0]["word"] == "Second"
+
+    # FFmpeg chains concatenate both streams.
+    video, vlabel = concat_filters(pieces, "0:v", "video")
+    audio, alabel = concat_filters(pieces, "0:a", "audio")
+    assert "[vc]" == vlabel and "[ac]" == alabel
+    assert "concat=n=2:v=1:a=0[vc]" in video
+    assert "concat=n=2:v=0:a=1[ac]" in audio
+    assert "trim=start=0.000:end=12.350" in video
+    assert "atrim=start=0.000:end=12.350" in audio
+
+    # No long gaps -> nothing to cut.
+    tight = {"segments": [{"start": 0.0, "end": 10.0, "text": "a b", "words": [
+        {"start": 0.0, "end": 4.0, "word": "a"}, {"start": 4.2, "end": 8.0, "word": "b"}]}]}
+    assert plan_trim(tight, 0.0, 10.0) is None
 
 
 def test_platform_presets_lift_captions_for_reels_safe_area() -> None:

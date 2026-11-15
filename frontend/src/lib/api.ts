@@ -87,7 +87,7 @@ export type AppSettings = {
 export type RenderOptions = {
   preset: string; caption_style: string; caption_options: Record<string, unknown>;
   music_path: string; music_volume: number; fps: number; ducking: boolean;
-  metadata_model?: string; smart_reframe: boolean;
+  metadata_model?: string; smart_reframe: boolean; trim_silence?: boolean;
 };
 
 export type ProjectDetail = Project & {

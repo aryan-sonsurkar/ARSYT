@@ -37,6 +37,7 @@ export function ClipCard({ clip, settings, musicFiles = [], showProject = false,
   const [platform, setPlatform] = useState<"youtube" | "reels">("youtube");
   const [smart, setSmart] = useState(settings?.values.smart_reframe ?? true);
   const [ducking, setDucking] = useState(true);
+  const [trimSilence, setTrimSilence] = useState(false);
   const [metadataModel, setMetadataModel] = useState(settings?.values.metadata_model ?? "");
   const [error, setError] = useState("");
 
@@ -51,6 +52,7 @@ export function ClipCard({ clip, settings, musicFiles = [], showProject = false,
       setMusic(clip.music_path || "");
       setVolume(clip.music_volume ?? settings?.values.background_music_volume ?? 0.18);
       setSmart(settings?.values.smart_reframe ?? true);
+      setTrimSilence(false);
       setMetadataModel(settings?.values.metadata_model ?? "");
       setError("");
     }
@@ -73,6 +75,7 @@ export function ClipCard({ clip, settings, musicFiles = [], showProject = false,
       await api.renderClip(clip.id, {
         preset, caption_style: style, caption_options: { ...(clip.caption_options ?? {}), platform },
         music_path: music, music_volume: volume, fps, ducking, metadata_model: metadataModel, smart_reframe: smart,
+        trim_silence: trimSilence,
       });
       onToast("Render queued. Progress is live in the queue.");
       setDialog("");
@@ -284,6 +287,7 @@ export function ClipCard({ clip, settings, musicFiles = [], showProject = false,
           <div className="st-toggle-row">
             <Toggle checked={smart} onChange={setSmart} label="Smart reframe" hint="Face-aware crop when OpenCV can detect faces; otherwise a safe centre crop." />
             <Toggle checked={ducking} onChange={setDucking} label="Duck music under speech" hint="Uses FFmpeg sidechain compression." />
+            <Toggle checked={trimSilence} onChange={setTrimSilence} label="Trim dead air" hint="Cuts silences longer than 1.2 s down to a natural pause and keeps captions in sync." />
           </div>
 
           {error && <InlineNote tone="error">{error}</InlineNote>}

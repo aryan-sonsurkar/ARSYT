@@ -19,7 +19,7 @@ Backend modules: `ingestion.py`, `transcription.py`, `ollama.py`, `highlights.py
 
 Frontend: new studio shell in `frontend/src/app/page.tsx`, components under `frontend/src/components/studio/`, typed client in `frontend/src/lib/api.ts`, styles in `frontend/src/app/studio.css`.
 
-Tests: `tests/test_clipfree_ingestion.py`, `test_clipfree_transcription.py`, `test_clipfree_studio.py` (**37 passed**), and `tests/e2e_workflow.py` (real media).
+Tests: `tests/test_clipfree_ingestion.py`, `test_clipfree_transcription.py`, `test_clipfree_studio.py` (**38 passed**), and `tests/e2e_workflow.py` (real media).
 
 ## YuNet face detection
 
@@ -36,6 +36,10 @@ The transcription panel's free-text language field is now a dropdown of common p
 ## Platform caption presets
 
 `CaptionOptions.platform` (`youtube` / `reels`) shifts captions above the platform's UI overlays: `_position_y` adds a 150 px bottom margin for Reels because Instagram's username/caption/music strip covers more of the lower frame than the YouTube Shorts interface. The render dialog exposes it as a "Platform safe area" dropdown and stores it in the clip's caption options, so re-renders keep the choice.
+
+## Silence trimming (opt-in)
+
+`backend/silence.py` (`plan_trim`) finds gaps longer than 1.2 s between transcript words inside a clip and builds kept pieces that retain a natural ~0.35 s pause (a 0.05 s guard stops the first phoneme from being clipped). `ClipService._render_video` renders those pieces with FFmpeg `trim` (video) / `atrim` (audio) + `concat` chains and re-times the transcript onto the trimmed timeline (`_remap_content`), so burned-in captions and SRTs stay word-synchronised on the shorter video. The whole feature is behind the "Trim dead air" toggle in the render dialog (`RenderRequest.trim_silence`); clip source timestamps in the database stay untouched, and the plan is skipped entirely when no gap is long enough to matter. A real-FFmpeg smoke test (30 s source → 25.4 s output) validated the generated chains.
 
 ## Natural cut boundaries
 

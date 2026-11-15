@@ -19,6 +19,7 @@ from backend.media import run_ffmpeg
 from backend.metadata import generate_clip_metadata
 from backend.presets import preset
 from backend.reframe import build_vertical_filter, detect_face_track
+from backend.silence import concat_filters, plan_trim
 from backend.thumbnails import create_thumbnail
 RENDER_WIDTH = 1080
 RENDER_HEIGHT = 1920
@@ -35,6 +36,7 @@ class RenderRequest:
     ducking: bool = True
     metadata_model: str = ""
     smart_reframe: bool = True
+    trim_silence: bool = False
 
     @classmethod
     def from_payload(cls, payload: dict[str, Any]) -> "RenderRequest":
@@ -48,6 +50,7 @@ class RenderRequest:
             ducking=bool(payload.get("ducking", True)),
             metadata_model=str(payload.get("metadata_model") or ""),
             smart_reframe=bool(payload.get("smart_reframe", True)),
+            trim_silence=bool(payload.get("trim_silence", False)),
         )
 
 
@@ -177,6 +180,7 @@ class ClipService:
             "caption_options": request.caption_options, "music_path": request.music_path,
             "music_volume": request.music_volume, "fps": request.fps, "ducking": request.ducking,
             "metadata_model": request.metadata_model, "smart_reframe": request.smart_reframe,
+            "trim_silence": request.trim_silence,
         }
         self.jobs.update(job["id"], payload_json=json.dumps(payload))
         with connect() as conn:
@@ -259,6 +263,15 @@ class ClipService:
                     (round(start, 3), round(end, 3), now_iso(), clip_id),
                 )
 
+            # Opt-in dead-air removal: cut long silences and re-time captions.
+            trim_plan = plan_trim(content, start, end) if request.trim_silence else None
+            caption_content, caption_start, caption_end = content, start, end
+            if trim_plan:
+                caption_content = trim_plan["content"]
+                caption_start, caption_end = 0.0, trim_plan["duration"]
+                duration = trim_plan["duration"]
+                self.jobs.update(job_id, stage=f"trimming {len(trim_plan['pieces']) - 1} long silence(s)")
+
             self.jobs.update(job_id, stage="detecting speaker framing", progress=3)
             track = []
             if request.smart_reframe:
@@ -274,14 +287,15 @@ class ClipService:
             )
             if not options.position and framing["face_detected"]:
                 options.position = framing["face_side"]
-            write_ass(ass_path, content, start, end, style_name, options)
-            srt_path.write_text(clip_srt(content, start, end), encoding="utf-8")
+            write_ass(ass_path, caption_content, caption_start, caption_end, style_name, options)
+            srt_path.write_text(clip_srt(caption_content, caption_start, caption_end), encoding="utf-8")
 
             music_path = self._resolve_music(project_dir, request.music_path)
             self.jobs.update(job_id, stage="rendering vertical video", progress=5)
             await self._render_video(
                 job_id, source, temporary, clip_dir, start, duration, framing["filter"], request,
                 music_path, style_name, ass_path.name,
+                pieces=trim_plan["pieces"] if trim_plan else None,
             )
             self.jobs.update(job_id, stage="validating rendered output", progress=88)
             rendered = await asyncio.to_thread(probe_media, temporary)
@@ -341,22 +355,38 @@ class ClipService:
     async def _render_video(
         self, job_id: str, source: Path, temporary: Path, clip_dir: Path, start: float, duration: float,
         video_filter: str, request: RenderRequest, music_path: Path | None, style_name: str,
-        caption_file: str,
+        caption_file: str, pieces: list[list[float]] | None = None,
     ) -> None:
         # ``cwd`` is the clip directory, so the caption file is passed as a
         # relative name to avoid Windows drive-letter escaping inside libass.
         caption_filter = f"ass=filename={caption_file}"
-        filters = [
-            f"[0:v]{video_filter},fps={request.fps},{caption_filter},format=yuv420p[vout]"
-        ]
-        color = preset(request.preset).get("color_filter")
-        if color:
-            filters[0] = f"[0:v]{video_filter},{color},fps={request.fps},{caption_filter},format=yuv420p[vout]"
-        filters.append(
-            f"[0:a]atrim=0:{duration:.3f},asetpts=PTS-STARTPTS,"
-            f"afade=t=in:st=0:d=0.15,afade=t=out:st={max(0, duration - 0.3):.3f}:d=0.3,"
-            f"volume=1.0,aformat=sample_rates=48000:channel_layouts=stereo[speech]"
-        )
+        if pieces and len(pieces) > 1:
+            # Silence trimming: cut each kept piece, concat, then style.
+            video_prefix, video_source = concat_filters(pieces, "0:v", "video")
+            audio_prefix, audio_source = concat_filters(pieces, "0:a", "audio")
+            filters = [
+                f"{video_prefix};{video_source}{video_filter},fps={request.fps},{caption_filter},format=yuv420p[vout]"
+            ]
+            color = preset(request.preset).get("color_filter")
+            if color:
+                filters[0] = f"{video_prefix};{video_source}{video_filter},{color},fps={request.fps},{caption_filter},format=yuv420p[vout]"
+            filters.append(
+                f"{audio_prefix};{audio_source}"
+                f"afade=t=in:st=0:d=0.15,afade=t=out:st={max(0, duration - 0.3):.3f}:d=0.3,"
+                f"volume=1.0,aformat=sample_rates=48000:channel_layouts=stereo[speech]"
+            )
+        else:
+            filters = [
+                f"[0:v]{video_filter},fps={request.fps},{caption_filter},format=yuv420p[vout]"
+            ]
+            color = preset(request.preset).get("color_filter")
+            if color:
+                filters[0] = f"[0:v]{video_filter},{color},fps={request.fps},{caption_filter},format=yuv420p[vout]"
+            filters.append(
+                f"[0:a]atrim=0:{duration:.3f},asetpts=PTS-STARTPTS,"
+                f"afade=t=in:st=0:d=0.15,afade=t=out:st={max(0, duration - 0.3):.3f}:d=0.3,"
+                f"volume=1.0,aformat=sample_rates=48000:channel_layouts=stereo[speech]"
+            )
         arguments: list[str] = []
         if music_path:
             filters.extend([
@@ -375,9 +405,11 @@ class ClipService:
         else:
             filters.append("[speech]anull[aout]")
 
-        arguments.extend([
-            "-ss", f"{float(start):.3f}", "-t", f"{duration:.3f}", "-i", str(source),
-        ])
+        if pieces and len(pieces) > 1:
+            # With absolute trims the input must not be pre-cut.
+            arguments.extend(["-i", str(source)])
+        else:
+            arguments.extend(["-ss", f"{float(start):.3f}", "-t", f"{duration:.3f}", "-i", str(source)])
         if music_path:
             arguments.extend(["-stream_loop", "-1", "-i", str(music_path)])
         arguments.extend([
