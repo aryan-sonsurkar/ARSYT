@@ -59,6 +59,7 @@ from backend.schemas import (
     SocialCaptionRequest,
     SocialSaveRequest,
     TranscriptionStartRequest,
+    TranscriptEditRequest,
     UrlIngestRequest,
     WhisperDownloadRequest,
 )
@@ -517,6 +518,16 @@ async def get_transcript(project_id: str) -> dict:
     except (OSError, json.JSONDecodeError) as exc:
         raise HTTPException(status_code=500, detail="Saved transcript cannot be read.") from exc
     return {"metadata": item, "content": content}
+
+
+@app.patch("/api/projects/{project_id}/transcript/segments")
+async def edit_transcript_segments(project_id: str, payload: TranscriptEditRequest) -> dict:
+    """Fix transcript typos; captions and SRT files are rewritten to match."""
+    project_or_404(project_id)
+    try:
+        return await asyncio.to_thread(transcription.apply_segment_edits, project_id, [item.model_dump() for item in payload.edits])
+    except IngestionError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @app.get("/api/projects/{project_id}/media/audio")

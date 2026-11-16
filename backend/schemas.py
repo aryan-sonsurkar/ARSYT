@@ -43,6 +43,15 @@ class WhisperDownloadRequest(BaseModel):
     confirm_download: bool = False
 
 
+class TranscriptSegmentEdit(BaseModel):
+    index: int = Field(ge=0)
+    text: str = Field(min_length=1, max_length=5000)
+
+
+class TranscriptEditRequest(BaseModel):
+    edits: list[TranscriptSegmentEdit] = Field(min_length=1, max_length=500)
+
+
 class HighlightStartRequest(BaseModel):
     model: str = Field(default="", max_length=120)
     count: int = Field(default=5, ge=1, le=20)

@@ -202,6 +202,70 @@ class TranscriptionService:
     def get_transcript(self, project_id: str) -> dict[str, Any] | None:
         return row("SELECT * FROM transcripts WHERE project_id=?", (project_id,))
 
+    def apply_segment_edits(self, project_id: str, edits: list[dict[str, Any]]) -> dict[str, Any]:
+        """Rewrite saved segment texts (typo fixes) and keep word timings proportional."""
+        record = self.get_transcript(project_id)
+        if not record:
+            raise IngestionError("This project has no saved transcript to edit.")
+        json_path = Path(record["json_path"])
+        if not json_path.is_file():
+            raise IngestionError("The saved transcript file is missing. Transcribe again first.")
+        try:
+            content = json.loads(json_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise IngestionError("The transcript file could not be read.") from exc
+        segments = content.get("segments")
+        if not isinstance(segments, list):
+            raise IngestionError("The transcript has no editable segments.")
+
+        total_edits = 0
+        for edit in edits:
+            index = int(edit.get("index", -1))
+            text = str(edit.get("text", "")).strip()
+            if index < 0 or index >= len(segments) or not text:
+                continue
+            segment = segments[index]
+            segment["text"] = text
+            words = segment.get("words") or []
+            if words:
+                start = float(words[0]["start"])
+                end = float(words[-1]["end"])
+                # Keep per-word timing slots, redistributing the new text across them
+                # so burned-in captions stay aligned.
+                new_words = text.split()
+                if new_words:
+                    span = max(end - start, 0.01)
+                    per = span / len(new_words)
+                    rebuilt = []
+                    for position, word in enumerate(new_words):
+                        slot = min(position, len(words) - 1)
+                        rebuilt.append({
+                            "start": round(start + position * per, 3),
+                            "end": round(start + (position + 1) * per, 3),
+                            "word": word,
+                            "probability": float(words[slot].get("probability", 0.9)),
+                        })
+                    segment["words"] = rebuilt
+            total_edits += 1
+        if not total_edits:
+            raise IngestionError("No valid segment edits were supplied.")
+
+        word_count = sum(len(segment.get("words") or []) for segment in segments)
+        content["word_count"] = word_count
+        json_path.write_text(json.dumps(content, ensure_ascii=False, indent=2), encoding="utf-8")
+        srt_path = Path(record["srt_path"]) if record.get("srt_path") else None
+        if srt_path and srt_path.is_file():
+            srt_path.write_text(transcript_to_srt(segments), encoding="utf-8")
+        text_path = Path(record["text_path"]) if record.get("text_path") else None
+        if text_path and text_path.is_file():
+            text_path.write_text("\n".join(str(segment.get("text", "")).strip() for segment in segments), encoding="utf-8")
+        with connect() as conn:
+            conn.execute(
+                "UPDATE transcripts SET word_count=?,segment_count=?,updated_at=? WHERE project_id=?",
+                (word_count, len(segments), now_iso(), project_id),
+            )
+        return {"edited": total_edits, "segments": len(segments), "word_count": word_count}
+
     async def start(self, project_id: str, request: TranscriptionRequest) -> dict:
         if not self.models.engine_available():
             raise IngestionError("The faster-whisper dependency is not installed. Install the project requirements before starting transcription.")

@@ -83,7 +83,7 @@ ClipFree is a **local-only** podcast-to-Shorts studio built alongside the legacy
 - [x] Free-space checks, upload limits, filename/path containment and local-only networking.
 - [x] Persisted settings/templates with validation.
 - [x] Hash-based deep links: `#/projects`, `#/projects/<id>`, `#/clips`, `#/queue`, `#/settings`.
-- [x] Focused automated coverage: **42 passed** across ingestion, transcription and studio tests.
+- [x] Focused automated coverage: **43 passed** across ingestion, transcription and studio tests.
 - [x] Caption rendering hardened: opaque text colours, per-cue font fitting so long lines stay inside the 1080 px frame, smart wrapping inside the margins, and non-overlapping cue boundaries.
 - [x] FFmpeg progress parsing tolerates the `N/A` timestamps FFmpeg emits before the first frame, so renders no longer abort mid-pipeline.
 - [x] Real end-to-end acceptance run (project `e259be863a784c1f830f3101db4eea63`, run against the shipped commit):

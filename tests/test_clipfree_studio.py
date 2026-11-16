@@ -790,3 +790,69 @@ def test_recover_interrupted_publishes_fails_stranded_jobs(
     assert "restarted" in job["error"].lower()
     clip = row("SELECT * FROM clips WHERE id='clip-rec'")
     assert clip["state"] == "failed"
+
+
+def test_transcript_segment_edits_retime_words_and_rewrite_files(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("CLIPFREE_DATA_DIR", str(tmp_path / "tx-data"))
+    from backend.transcription import TranscriptionService
+    from backend.jobs import IngestionJobManager
+
+    init_db()
+    project_id = "proj-tx"
+    now = "2026-01-01T00:00:00+00:00"
+    transcript_dir = tmp_path / "tx-data" / "projects" / project_id / "transcript"
+    transcript_dir.mkdir(parents=True)
+    content = {
+        "language": "en", "duration_seconds": 30.0,
+        "segments": [
+            {"start": 0.0, "end": 10.0, "text": "Untouched segment.",
+             "words": [{"start": 0.0, "end": 10.0, "word": "Untouched segment.", "probability": 0.9}]},
+            {"start": 12.0, "end": 20.0, "text": "Old snsegment with a typo.",
+             "words": [
+                 {"start": 12.0, "end": 14.0, "word": "Old", "probability": 0.8},
+                 {"start": 14.0, "end": 16.0, "word": "snsegment", "probability": 0.7},
+                 {"start": 16.0, "end": 20.0, "word": "with a typo.", "probability": 0.9},
+             ]},
+        ],
+    }
+    json_path = transcript_dir / "transcript.json"
+    srt_path = transcript_dir / "transcript.srt"
+    text_path = transcript_dir / "transcript.txt"
+    json_path.write_text(json.dumps(content), encoding="utf-8")
+    srt_path.write_text("1\n00:00:12,000 --> 00:00:20,000\nOld snsegment with a typo.\n", encoding="utf-8")
+    text_path.write_text("Old snsegment with a typo.\n", encoding="utf-8")
+    with connect() as conn:
+        conn.execute("INSERT INTO projects(id,name,created_at,updated_at) VALUES(?,?,?,?)",
+                     (project_id, "Tx Edit", now, now))
+        conn.execute("INSERT INTO jobs(id,project_id,kind,state,stage,progress,created_at) VALUES(?,?,?,?,?,?,?)",
+                     ("tx-job", project_id, "transcription", "completed", "seeded", 100, now))
+        conn.execute(
+            """INSERT INTO transcripts(project_id,job_id,model_name,language,device,compute_type,json_path,srt_path,
+               text_path,duration_seconds,segment_count,word_count,created_at,updated_at)
+               VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (project_id, "tx-job", "small", "en", "cpu", "int8", str(json_path), str(srt_path),
+             str(text_path), 30.0, 2, 4, now, now),
+        )
+
+    service = TranscriptionService(IngestionJobManager())
+    result = service.apply_segment_edits(project_id, [{"index": 1, "text": "Fixed segment without a typo."}])
+    assert result["edited"] == 1 and result["segments"] == 2
+
+    saved = json.loads(json_path.read_text(encoding="utf-8"))
+    assert saved["segments"][0]["text"] == "Untouched segment."
+    edited = saved["segments"][1]
+    assert edited["text"] == "Fixed segment without a typo."
+    words = edited["words"]
+    assert len(words) == len("Fixed segment without a typo.".split())
+    assert words[0]["start"] == pytest.approx(12.0)
+    assert words[-1]["end"] == pytest.approx(20.0)
+    for first, second in zip(words, words[1:]):
+        assert second["start"] >= first["start"]
+    assert "Fixed segment without a typo." in srt_path.read_text(encoding="utf-8")
+    assert "Fixed segment without a typo." in text_path.read_text(encoding="utf-8")
+
+    # Out-of-range indexes are skipped, and a no-op edit batch is rejected.
+    with pytest.raises(Exception):
+        service.apply_segment_edits(project_id, [{"index": 99, "text": "Nothing."}])

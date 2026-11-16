@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Download, FileAudio, LoaderCircle, Play, Search, Sparkles } from "lucide-react";
+import { Download, FileAudio, LoaderCircle, PencilLine, Play, Save, Search, Sparkles } from "lucide-react";
 import { api, ApiError, formatBytes, Job, Project, Transcript, WhisperModel } from "@/lib/api";
 
 type Props = { project: Project; onJobChange: () => void };
@@ -40,6 +40,8 @@ export function TranscriptionPanel({ project, onJobChange }: Props) {
   const [search, setSearch] = useState("");
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
+  const [editingIndex, setEditingIndex] = useState<number | null>(null);
+  const [editingText, setEditingText] = useState("");
   const audioRef = useRef<HTMLAudioElement>(null);
 
   const refreshModels = async (selectDefault = false) => {
@@ -91,6 +93,24 @@ export function TranscriptionPanel({ project, onJobChange }: Props) {
     finally { setBusy(false); }
   }
 
+  function beginEdit(index: number, text: string) {
+    setEditingIndex(index);
+    setEditingText(text);
+  }
+
+  async function saveEdit() {
+    if (editingIndex === null || !editingText.trim()) { setEditingIndex(null); return; }
+    setBusy(true);
+    try {
+      await api.editTranscriptSegments(project.id, [{ index: editingIndex, text: editingText }]);
+      await loadTranscript();
+      setMessage("Segment updated — captions and SRT stay in sync.");
+      onJobChange();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not save the transcript edit.");
+    } finally { setBusy(false); setEditingIndex(null); setEditingText(""); }
+  }
+
   return <section className="transcription-panel">
     <div className="card-heading"><div><h2>Local transcription</h2><p>faster-whisper runs only on audio saved in this project.</p></div><span className="local-model-label"><Sparkles size={13} /> LOCAL AI</span></div>
     {project.status !== "source_ready" && <div className="transcription-note">Finish source ingestion before starting transcription.</div>}
@@ -103,7 +123,32 @@ export function TranscriptionPanel({ project, onJobChange }: Props) {
     </div>}
     {job && <div className="transcription-job"><span className={`status-badge status-${job.state}`}><span />{job.state}</span><strong>{job.stage}</strong><span>{job.progress}%</span>{job.error && <em>{job.error}</em>}</div>}
     {message && <p className="transcription-message">{message}</p>}
-    {transcript && <div className="transcript-viewer"><div className="transcript-toolbar"><div><strong>{transcript.metadata.language || "Unknown language"}</strong><span>{transcript.metadata.segment_count} segments · {transcript.metadata.word_count} words · {transcript.metadata.model_name} · {transcript.metadata.device}/{transcript.metadata.compute_type} · language confidence {(transcript.content.language_probability * 100).toFixed(0)}%</span><small>{transcript.metadata.elapsed_seconds.toFixed(1)}s · {transcript.metadata.real_time_factor.toFixed(2)}× real-time · RAM peak Δ {transcript.metadata.ram_delta_bytes ? formatBytes(transcript.metadata.ram_delta_bytes) : "unavailable"} · VRAM Δ {transcript.metadata.vram_delta_bytes === null ? "unavailable" : formatBytes(transcript.metadata.vram_delta_bytes)}</small></div><label className="search-box"><Search size={14} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search transcript" /></label></div>{transcript.content.language_probability < 0.5 && <p className="transcription-note">Language detection is uncertain. Select the spoken language above and transcribe again to improve recognition.</p>}<audio ref={audioRef} controls preload="metadata" src={api.audioUrl(project.id)} /><div className="transcript-segments">{visible.map((segment, index) => <button key={`${segment.start}-${index}`} onClick={() => { if (audioRef.current) { audioRef.current.currentTime = segment.start; void audioRef.current.play(); } }}><time>{formatTimestamp(segment.start)}</time><span>{segment.text}</span><Play size={13} /></button>)}</div></div>}
+    {transcript && <div className="transcript-viewer"><div className="transcript-toolbar"><div><strong>{transcript.metadata.language || "Unknown language"}</strong><span>{transcript.metadata.segment_count} segments · {transcript.metadata.word_count} words · {transcript.metadata.model_name} · {transcript.metadata.device}/{transcript.metadata.compute_type} · language confidence {(transcript.content.language_probability * 100).toFixed(0)}%</span><small>{transcript.metadata.elapsed_seconds.toFixed(1)}s · {transcript.metadata.real_time_factor.toFixed(2)}× real-time · RAM peak Δ {transcript.metadata.ram_delta_bytes ? formatBytes(transcript.metadata.ram_delta_bytes) : "unavailable"} · VRAM Δ {transcript.metadata.vram_delta_bytes === null ? "unavailable" : formatBytes(transcript.metadata.vram_delta_bytes)}</small></div><label className="search-box"><Search size={14} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search transcript" /></label></div>{transcript.content.language_probability < 0.5 && <p className="transcription-note">Language detection is uncertain. Select the spoken language above and transcribe again to improve recognition.</p>}<audio ref={audioRef} controls preload="metadata" src={api.audioUrl(project.id)} /><div className="transcript-segments">{visible.map((segment, index) => {
+          const originalIndex = transcript.content.segments.indexOf(segment);
+          return editingIndex === originalIndex ? (
+            <div className="st-segment-edit" key={`edit-${segment.start}-${index}`}>
+              <time>{formatTimestamp(segment.start)}</time>
+              <textarea value={editingText} rows={2} onChange={(event) => setEditingText(event.target.value)} />
+              <div className="st-segment-edit-actions">
+                <button className="secondary-button sm" disabled={busy} onClick={() => { setEditingIndex(null); setEditingText(""); }}>Cancel</button>
+                <button className="primary-button sm" disabled={busy || !editingText.trim()} onClick={() => void saveEdit()}>
+                  {busy ? <LoaderCircle size={13} className="spin" /> : <Save size={13} />} Save
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="st-segment-row" key={`${segment.start}-${index}`}>
+              <button onClick={() => { if (audioRef.current) { audioRef.current.currentTime = segment.start; void audioRef.current.play(); } }}>
+                <time>{formatTimestamp(segment.start)}</time>
+                <span>{segment.text}</span>
+                <Play size={13} />
+              </button>
+              <button className="st-segment-edit-btn" title="Fix text (captions and SRT stay in sync)" onClick={() => beginEdit(originalIndex, segment.text)}>
+                <PencilLine size={12} />
+              </button>
+            </div>
+          );
+        })}</div></div>}
   </section>;
 }
 
