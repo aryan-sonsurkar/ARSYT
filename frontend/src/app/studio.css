@@ -476,3 +476,12 @@ html[data-theme="light"] .st-bell-item { background: #f7f5fa; }
 html[data-theme="light"] .st-toggle-track { background: #ddd6e6; }
 html[data-theme="light"] .st-bell-panel { box-shadow: 0 20px 50px #2a203c26; }
 html[data-theme="light"] .toast { background: #241d2e; color: #f5f3f8; }
+
+/* Published chip + drop overlay */
+.st-published-chip { display: inline-flex; align-items: center; gap: 4px; margin-left: 4px; padding: 2px 6px; border: 1px solid #2b6c68; border-radius: 3px; background: #12312f; color: #8fd8ce; font: 700 8px var(--mono); text-transform: uppercase; letter-spacing: 0.4px; text-decoration: none; }
+.st-published-chip:hover { color: #b2ece2; border-color: #4fa39b; }
+html[data-theme="light"] .st-published-chip { background: #e3f5f1; color: #1e6b62; }
+.st-drop-overlay { position: fixed; inset: 0; z-index: 90; display: grid; place-items: center; padding: 30px; background: #0a090ce6; backdrop-filter: blur(3px); }
+.st-drop-overlay-card { display: flex; flex-direction: column; align-items: center; gap: 8px; max-width: 420px; padding: 34px 44px; border: 2px dashed #8a5cd6; border-radius: 14px; background: #16131b; text-align: center; color: #cab5e8; }
+.st-drop-overlay-card strong { font-size: 14px; color: #efe7f8; }
+.st-drop-overlay-card span { color: #8d8398; font-size: 10px; line-height: 1.5; }

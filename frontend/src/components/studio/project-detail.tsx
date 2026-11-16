@@ -40,6 +40,7 @@ export function ProjectDetailView({ projectId, onBack, onChanged, onToast }: Pro
   const [editing, setEditing] = useState<CandidateEdit | null>(null);
   const [manualOpen, setManualOpen] = useState(false);
   const [manual, setManual] = useState({ title: "", start: 0, end: 30 });
+  const [selectedClips, setSelectedClips] = useState<Set<string>>(new Set());
   const [projectExport, setProjectExport] = useState<ExportResult | null>(null);
   const [sourceUrl, setSourceUrl] = useState("");
   const initialized = useRef(false);
@@ -172,6 +173,35 @@ export function ProjectDetailView({ projectId, onBack, onChanged, onToast }: Pro
   async function removeMusic(name: string) {
     if (!window.confirm(`Remove ${name} from this project?`)) return;
     await act(`music-${name}`, () => api.deleteMusic(projectId, name), "Music file removed.");
+  }
+
+  function toggleClipSelection(clipId: string) {
+    setSelectedClips((current) => {
+      const next = new Set(current);
+      if (next.has(clipId)) next.delete(clipId); else next.add(clipId);
+      return next;
+    });
+  }
+
+  async function batchRenderClips() {
+    if (!settings || !selectedClips.size) return;
+    await act("batch-render", () => api.batchRender([...selectedClips], {
+      preset: settings.values.render_preset, caption_style: settings.values.caption_style,
+      caption_options: {}, music_path: "", music_volume: settings.values.background_music_volume,
+      fps: 30, ducking: true, metadata_model: settings.values.metadata_model,
+      smart_reframe: settings.values.smart_reframe,
+    }), `${selectedClips.size} render job${selectedClips.size === 1 ? "" : "s"} queued with your saved defaults.`);
+    setSelectedClips(new Set());
+  }
+
+  async function batchExportClips() {
+    if (!selectedClips.size) return;
+    await act("batch-export", () => api.batchExport([...selectedClips]), "Selected clips exported to the local export folder.");
+  }
+
+  async function batchDownloadClips() {
+    if (!selectedClips.size) return;
+    await act("batch-download", () => api.downloadBatch([...selectedClips]), "Batch ZIP downloaded.");
   }
 
   async function copySourceUrl() {
@@ -396,10 +426,15 @@ export function ProjectDetailView({ projectId, onBack, onChanged, onToast }: Pro
           <div className="st-toolbar">
             <div className="st-toolbar-title"><Clapperboard size={15} /><strong>{detail.clips.length} clips</strong><span>{renderable.length} ready to render</span></div>
             <div className="st-toolbar-actions">
+              <button className="secondary-button sm" disabled={!detail.clips.length} onClick={() => setSelectedClips(selectedClips.size === detail.clips.length ? new Set() : new Set(detail.clips.map((clip) => clip.id)))}>{selectedClips.size === detail.clips.length && detail.clips.length ? "Clear" : "Select all"}</button>
+              <button className="secondary-button sm" disabled={!selectedClips.size || Boolean(busy)} onClick={() => void batchRenderClips()}><WandSparkles size={13} /> Render selected</button>
+              <button className="secondary-button sm" disabled={!selectedClips.size || Boolean(busy)} onClick={() => void batchExportClips()}><Package size={13} /> Export</button>
+              <button className="secondary-button sm" disabled={!selectedClips.size || Boolean(busy)} onClick={() => void batchDownloadClips()}><Download size={13} /> ZIP</button>
               {approvedCandidates.length > 0 && <button className="secondary-button sm" onClick={() => void clipsFromApproved()} disabled={Boolean(busy)}><Plus size={13} /> From approved</button>}
               <button className="secondary-button sm" onClick={() => setManualOpen((open) => !open)}><Plus size={13} /> Manual clip</button>
             </div>
           </div>
+          {selectedClips.size > 0 && <InlineNote tone="info">{selectedClips.size} selected. Batch render uses your saved Settings defaults.</InlineNote>}
 
           {manualOpen && (
             <Panel title="Create a clip from timestamps" subtitle={`Source duration ${metadata.duration_seconds ? formatTimestamp(metadata.duration_seconds) : "unknown"}. Timestamps snap to transcript segments.`}>
@@ -415,7 +450,11 @@ export function ProjectDetailView({ projectId, onBack, onChanged, onToast }: Pro
           {detail.clips.length ? (
             <div className="st-clip-grid">
               {detail.clips.map((clip) => (
-                <div key={clip.id} id={`clip-${clip.id}`}>
+                <div key={clip.id} id={`clip-${clip.id}`} className={`st-selectable ${selectedClips.has(clip.id) ? "selected" : ""}`}>
+                  <label className="st-selectbox">
+                    <input type="checkbox" checked={selectedClips.has(clip.id)} onChange={() => toggleClipSelection(clip.id)} />
+                    <span />
+                  </label>
                 <ClipCard
                   clip={clip}
                   settings={settings}

@@ -3,7 +3,7 @@
 import { useState } from "react";
 import {
   Captions, Check, Copy, Download, Film, Flame, LoaderCircle, Package,
-  PencilLine, Play, Sparkles, Trash2, UploadCloud, WandSparkles,
+  PencilLine, Play, Sparkles, Trash2, UploadCloud, WandSparkles, Youtube,
 } from "lucide-react";
 import { api, AppSettings, Clip, formatBytes, formatTimestamp, PublishRequest, relativeTime, SocialVariant } from "@/lib/api";
 import { Busy, EmptyState, Field, InlineNote, Modal, StatusBadge, Toggle } from "@/components/studio/ui";
@@ -254,6 +254,11 @@ export function ClipCard({ clip, settings, musicFiles = [], showProject = false,
           <div className="st-clip-top">
             <StatusBadge state={clip.state} />
             {clip.overall_score ? <span className="st-score-chip">score {Math.round(clip.overall_score)}</span> : null}
+            {clip.metadata?.youtube_url && (
+              <a className="st-published-chip" href={clip.metadata.youtube_url} target="_blank" rel="noopener noreferrer" title={clip.metadata.youtube_url}>
+                <Youtube size={11} /> Published
+              </a>
+            )}
             {active && <LoaderCircle size={13} className="spin" />}
           </div>
           <h3>{clip.title}</h3>

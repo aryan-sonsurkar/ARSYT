@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";import { AnimatePresence, motion } from "framer-motion";
 import {
   Activity, Bell, Check, Clapperboard, Film, FolderKanban, HardDrive, LayoutDashboard,
-  Menu, Moon, Plus, Settings2, Sun, X,
+  Menu, Moon, Plus, Settings2, Sun, UploadCloud, X,
 } from "lucide-react";
 import { api, Dashboard, Health } from "@/lib/api";
 import { NewProjectModal } from "@/components/studio/new-project-modal";
@@ -147,6 +147,63 @@ export default function Home() {
     if (!bellOpen) { seenAt.current = Date.now(); setUnseen(0); }
   }
 
+  // ---- Drag & drop video anywhere -> new project with the file as source ----
+  const [dragging, setDragging] = useState(false);
+  const [dropBusy, setDropBusy] = useState("");
+  const dragDepth = useRef(0);
+
+  const isVideoFile = (file: File) =>
+    file.type.startsWith("video/") || /\.(mp4|m4v|mov|mkv|webm|avi)$/i.test(file.name);
+
+  async function handleDrop(file: File) {
+    if (!isVideoFile(file)) { notify("Drop a video file (MP4, MOV, MKV, WebM or AVI) to start a project."); return; }
+    setDropBusy("Creating the local project…");
+    try {
+      const name = file.name.replace(/\.[^.]+$/, "").slice(0, 120) || "Dropped video";
+      const project = await api.createProject(name, "");
+      setDropBusy("Storing and probing the video locally…");
+      const job = await api.createJob(project.id);
+      await api.uploadSource(project.id, job.id, file);
+      notify(`Project "${name}" created and the video is ingested locally.`);
+      openProject(project.id);
+    } catch (cause) {
+      notify(cause instanceof Error ? cause.message : "Could not import the dropped video.");
+    } finally { setDropBusy(""); }
+  }
+
+  useEffect(() => {
+    const onDragEnter = (event: DragEvent) => {
+      if (!event.dataTransfer) return;
+      event.preventDefault();
+      dragDepth.current += 1;
+      if ([...event.dataTransfer.items].some((item) => item.kind === "file")) setDragging(true);
+    };
+    const onDragOver = (event: DragEvent) => { event.preventDefault(); };
+    const onDragLeave = (event: DragEvent) => {
+      event.preventDefault();
+      dragDepth.current = Math.max(0, dragDepth.current - 1);
+      if (dragDepth.current === 0) setDragging(false);
+    };
+    const onDrop = (event: DragEvent) => {
+      event.preventDefault();
+      dragDepth.current = 0;
+      setDragging(false);
+      const file = event.dataTransfer?.files?.[0];
+      if (file && !dropBusy) void handleDrop(file);
+    };
+    window.addEventListener("dragenter", onDragEnter);
+    window.addEventListener("dragover", onDragOver);
+    window.addEventListener("dragleave", onDragLeave);
+    window.addEventListener("drop", onDrop);
+    return () => {
+      window.removeEventListener("dragenter", onDragEnter);
+      window.removeEventListener("dragover", onDragOver);
+      window.removeEventListener("dragleave", onDragLeave);
+      window.removeEventListener("drop", onDrop);
+    };
+  }, [dropBusy, notify]);
+  // --------------------------------------------------------------------------
+
   const activeProject = view === "projects" && projectId;
   const pageLabel = activeProject ? "Project" : navigation.find((item) => item.id === view)?.label ?? "Overview";
 
@@ -248,6 +305,18 @@ export default function Home() {
         onCreated={(id) => { openProject(id); void refresh(true); }}
         onToast={notify}
       />
+
+      <AnimatePresence>
+        {(dragging || dropBusy) && (
+          <motion.div className="st-drop-overlay" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+            <div className="st-drop-overlay-card">
+              <UploadCloud size={34} />
+              <strong>{dropBusy || "Drop the video to create a project"}</strong>
+              <span>{dropBusy ? "Importing locally — you will land in the project when it finishes." : "MP4, MOV, MKV, WebM or AVI · stays on this device"}</span>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <AnimatePresence>
         {toast && (
