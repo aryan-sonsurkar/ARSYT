@@ -1,8 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";import { AnimatePresence, motion } from "framer-motion";
+import { useCallback, useEffect, useRef, useState } from "react";import { AnimatePresence, motion } from "framer-motion";
 import {
-  Activity, Check, Clapperboard, Film, FolderKanban, HardDrive, LayoutDashboard,
+  Activity, Bell, Check, Clapperboard, Film, FolderKanban, HardDrive, LayoutDashboard,
   Menu, Plus, Settings2, X,
 } from "lucide-react";
 import { api, Dashboard, Health } from "@/lib/api";
@@ -13,9 +13,10 @@ import { ProjectDetailView } from "@/components/studio/project-detail";
 import { ClipLibrary } from "@/components/studio/clip-library";
 import { QueueView } from "@/components/studio/job-list";
 import { SettingsView } from "@/components/studio/settings-view";
-import { formatBytes } from "@/lib/api";
+import { formatBytes, relativeTime } from "@/lib/api";
 
 type View = "overview" | "projects" | "clips" | "queue" | "settings";
+type Notification = { id: number; message: string; at: number };
 
 const initialDashboard: Dashboard = {
   stats: { projects: 0, videos_processed: 0, clips_generated: 0, active_jobs: 0, completed_jobs: 0, failed_jobs: 0, candidates: 0 },
@@ -58,6 +59,10 @@ export default function Home() {
   const [mobileMenu, setMobileMenu] = useState(false);
   const [newProjectOpen, setNewProjectOpen] = useState(false);
   const [toast, setToast] = useState("");
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [bellOpen, setBellOpen] = useState(false);
+  const [unseen, setUnseen] = useState(0);
+  const seenAt = useRef(0);
 
   const refresh = useCallback(async (quiet = false) => {
     try {
@@ -116,6 +121,17 @@ export default function Home() {
     setMobileMenu(false);
   }
 
+  const notify = useCallback((message: string) => {
+    setToast(message);
+    setNotifications((current) => [...current.slice(-29), { id: Date.now() + Math.random(), message, at: Date.now() }]);
+    setUnseen((current) => current + 1);
+  }, []);
+
+  function openBell() {
+    setBellOpen((open) => !open);
+    if (!bellOpen) { seenAt.current = Date.now(); setUnseen(0); }
+  }
+
   const activeProject = view === "projects" && projectId;
   const pageLabel = activeProject ? "Project" : navigation.find((item) => item.id === view)?.label ?? "Overview";
 
@@ -156,6 +172,27 @@ export default function Home() {
           <div className="topbar-right">
             <div className={`connection-pill ${health?.ollama.available ? "connected" : ""}`}><span className="connection-dot" />{health?.ollama.available ? "Ollama connected" : "Ollama offline"}</div>
             <span className="st-local-pill">127.0.0.1</span>
+            <div className="st-bell-wrap">
+              <button className="icon-button st-bell" aria-label="Notifications" onClick={openBell}>
+                <Bell size={17} />
+                {unseen > 0 && <span className="st-bell-count">{unseen > 9 ? "9+" : unseen}</span>}
+              </button>
+              <AnimatePresence>
+                {bellOpen && (
+                  <motion.div className="st-bell-panel" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 4 }}>
+                    <div className="st-bell-head"><strong>Notifications</strong><button className="text-button" onClick={() => setNotifications([])}>Clear</button></div>
+                    <div className="st-bell-list">
+                      {notifications.length ? [...notifications].reverse().map((item) => (
+                        <div className="st-bell-item" key={item.id}>
+                          <span className="st-bell-dot" />
+                          <div><p>{item.message}</p><small>{relativeTime(new Date(item.at).toISOString())}</small></div>
+                        </div>
+                      )) : <div className="st-bell-empty">Nothing yet. Activity messages collect here.</div>}
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
             <div className="top-avatar">AS</div>
           </div>
         </header>
@@ -165,7 +202,7 @@ export default function Home() {
             <OverviewView
               data={data} health={health} loading={loading} error={error}
               onOpenProject={openProject} onNewProject={() => setNewProjectOpen(true)}
-              onNavigate={navigate} onToast={setToast} onChanged={() => void refresh(true)}
+              onNavigate={navigate} onToast={notify} onChanged={() => void refresh(true)}
             />
           )}
           {view === "projects" && (activeProject ? (
@@ -174,14 +211,14 @@ export default function Home() {
               projectId={projectId}
               onBack={() => { setProjectId(null); void refresh(true); }}
               onChanged={() => void refresh(true)}
-              onToast={setToast}
+              onToast={notify}
             />
           ) : (
             <ProjectsView projects={data.projects} onOpenProject={openProject} onNewProject={() => setNewProjectOpen(true)} />
           ))}
-          {view === "clips" && <ClipLibrary onOpenProject={openProject} onToast={setToast} />}
-          {view === "queue" && <QueueView onToast={setToast} />}
-          {view === "settings" && <SettingsView onToast={setToast} />}
+          {view === "clips" && <ClipLibrary onOpenProject={openProject} onToast={notify} />}
+          {view === "queue" && <QueueView onToast={notify} />}
+          {view === "settings" && <SettingsView onToast={notify} />}
 
           <footer className="page-footer"><span>ClipFree <span className="footer-dot">·</span> Local first, always.</span><span><span className="footer-lock">◆</span> Your files never leave this device</span></footer>
         </div>
@@ -191,7 +228,7 @@ export default function Home() {
         open={newProjectOpen}
         onClose={() => setNewProjectOpen(false)}
         onCreated={(id) => { openProject(id); void refresh(true); }}
-        onToast={setToast}
+        onToast={notify}
       />
 
       <AnimatePresence>
