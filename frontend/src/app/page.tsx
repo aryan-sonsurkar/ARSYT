@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";import { AnimatePresence, motion } from "framer-motion";
 import {
   Activity, Bell, Check, Clapperboard, Film, FolderKanban, HardDrive, LayoutDashboard,
-  Menu, Plus, Settings2, X,
+  Menu, Moon, Plus, Settings2, Sun, X,
 } from "lucide-react";
 import { api, Dashboard, Health } from "@/lib/api";
 import { NewProjectModal } from "@/components/studio/new-project-modal";
@@ -63,6 +63,21 @@ export default function Home() {
   const [bellOpen, setBellOpen] = useState(false);
   const [unseen, setUnseen] = useState(0);
   const seenAt = useRef(0);
+  const [theme, setTheme] = useState<"dark" | "light">("dark");
+
+  useEffect(() => {
+    const stored = window.localStorage.getItem("clipfree-theme");
+    const next = stored === "light" ? "light" : "dark";
+    setTheme(next);
+    document.documentElement.dataset.theme = next;
+  }, []);
+
+  function toggleTheme() {
+    const next = theme === "dark" ? "light" : "dark";
+    setTheme(next);
+    document.documentElement.dataset.theme = next;
+    window.localStorage.setItem("clipfree-theme", next);
+  }
 
   const refresh = useCallback(async (quiet = false) => {
     try {
@@ -172,6 +187,9 @@ export default function Home() {
           <div className="topbar-right">
             <div className={`connection-pill ${health?.ollama.available ? "connected" : ""}`}><span className="connection-dot" />{health?.ollama.available ? "Ollama connected" : "Ollama offline"}</div>
             <span className="st-local-pill">127.0.0.1</span>
+            <button className="icon-button" aria-label="Toggle light or dark theme" title={theme === "dark" ? "Switch to light" : "Switch to dark"} onClick={toggleTheme}>
+              {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
+            </button>
             <div className="st-bell-wrap">
               <button className="icon-button st-bell" aria-label="Notifications" onClick={openBell}>
                 <Bell size={17} />

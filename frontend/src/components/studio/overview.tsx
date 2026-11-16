@@ -2,10 +2,10 @@
 
 import { motion } from "framer-motion";
 import {
-  Activity, ArrowRight, AudioLines, Clapperboard, Cpu, Film, FolderKanban,
-  HardDrive, LoaderCircle, Plus, Sparkles, Video, WandSparkles,
+  Activity, ArrowRight, AudioLines, CheckCircle2, Clapperboard, Cpu, Film, FolderKanban,
+  HardDrive, LoaderCircle, Plus, Sparkles, Video, WandSparkles, Youtube,
 } from "lucide-react";
-import { api, Dashboard, formatBytes, formatTimestamp, Health, Project, relativeTime } from "@/lib/api";
+import { api, Clip, Dashboard, formatBytes, formatTimestamp, Health, Job, Project, relativeTime } from "@/lib/api";
 import { JobList } from "@/components/studio/job-list";
 import { EmptyState, StatusBadge } from "@/components/studio/ui";
 
@@ -22,12 +22,15 @@ type Props = {
 };
 
 export function OverviewView({ data, health, loading, error, onOpenProject, onNewProject, onNavigate, onToast, onChanged }: Props) {
+  const publishedCount = data.clips.filter((clip) => clip.state === "published").length;
   const metrics = [
     { label: "Total projects", value: data.stats.projects, icon: FolderKanban, note: "Created on this device" },
     { label: "Videos processed", value: data.stats.videos_processed, icon: Video, note: "Imported source videos" },
     { label: "Clips rendered", value: data.stats.clips_generated, icon: Clapperboard, note: "Real vertical renders" },
+    { label: "Published", value: publishedCount, icon: Youtube, note: publishedCount ? "Uploaded to your channel" : "Nothing uploaded yet" },
     { label: "Active jobs", value: data.stats.active_jobs, icon: Activity, note: data.stats.active_jobs ? "In your local queue" : "Nothing running" },
   ];
+  const milestones = buildMilestones(data.clips, data.jobs);
 
   return (
     <div className="st-stack">
@@ -109,6 +112,22 @@ export function OverviewView({ data, health, loading, error, onOpenProject, onNe
               </div>
             ) : <EmptyState icon={<Clapperboard size={18} />} title="No rendered clips yet">Approve highlights in a project to create your first clip.</EmptyState>}
           </section>
+
+          <section className="st-panel">
+            <div className="st-panel-head"><div><h2><CheckCircle2 size={14} /> Milestones</h2><p>What this studio has produced</p></div></div>
+            {milestones.length ? (
+              <div className="st-milestone-list">
+                {milestones.slice(0, 7).map((item) => (
+                  <button key={item.key} className="st-milestone" onClick={() => onOpenProject(item.projectId)}>
+                    <span className={`st-milestone-icon ${item.tone}`}><item.icon size={13} /></span>
+                    <span className="st-milestone-copy"><strong>{item.label}</strong><em>{relativeTime(item.at)}</em></span>
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <EmptyState icon={<CheckCircle2 size={18} />} title="No milestones yet">Rendered clips and completed jobs show up here.</EmptyState>
+            )}
+          </section>
         </div>
       </div>
 
@@ -138,4 +157,33 @@ function ProjectRow({ project, index, onOpen }: { project: Project; index: numbe
       <ArrowRight size={15} />
     </button>
   );
+}
+
+type Milestone = {
+  key: string; label: string; at: string; tone: string; projectId: string;
+  icon: typeof CheckCircle2;
+};
+
+function buildMilestones(clips: Clip[], jobs: Job[]): Milestone[] {
+  const events: Milestone[] = [];
+  for (const clip of clips) {
+    const at = clip.updated_at;
+    if (clip.state === "published") {
+      events.push({ key: `pub-${clip.id}`, label: `Published “${clip.title}” to YouTube`, at, tone: "pub", projectId: clip.project_id, icon: Youtube });
+    } else if (clip.state === "rendered") {
+      events.push({ key: `ren-${clip.id}`, label: `Rendered “${clip.title}” (${formatTimestamp(clip.duration)})`, at, tone: "ren", projectId: clip.project_id, icon: Clapperboard });
+    } else if (clip.state === "failed") {
+      events.push({ key: `fail-${clip.id}`, label: `Render failed on “${clip.title}”`, at, tone: "fail", projectId: clip.project_id, icon: Activity });
+    }
+  }
+  for (const job of jobs) {
+    if (job.state !== "completed" || !job.completed_at) continue;
+    const label: Record<string, string> = {
+      ingestion: "Imported source media", transcription: "Transcribed audio locally",
+      highlights: "Found highlight moments", render: "Rendered a vertical clip",
+      pipeline: "Full pipeline finished", publish: "Uploaded a Short to YouTube",
+    };
+    events.push({ key: `job-${job.id}`, label: label[job.kind ?? ""] ?? `${job.kind} finished`, at: job.completed_at, tone: "job", projectId: job.project_id, icon: CheckCircle2 });
+  }
+  return events.sort((a, b) => (a.at < b.at ? 1 : -1));
 }

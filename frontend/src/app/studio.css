@@ -433,3 +433,46 @@
 .st-bell-item p { margin: 0; color: #cfc4dc; font-size: 9px; line-height: 1.5; }
 .st-bell-item small { color: #6d6675; font: 8px var(--mono); }
 .st-bell-empty { padding: 18px 6px; text-align: center; color: #756d7e; font-size: 9px; }
+
+/* Milestones feed + 5-metric grid */
+.metric-grid { grid-template-columns: repeat(5, minmax(0, 1fr)) !important; }
+@media (max-width: 1100px) { .metric-grid { grid-template-columns: repeat(3, minmax(0, 1fr)) !important; } }
+.st-milestone-list { display: flex; flex-direction: column; gap: 3px; }
+.st-milestone { display: flex; align-items: center; gap: 9px; padding: 6px 5px; border: 0; border-top: 1px solid var(--line-soft); background: transparent; text-align: left; cursor: pointer; border-radius: 5px; }
+.st-milestone:first-child { border-top: 0; }
+.st-milestone:hover { background: #17141c; }
+.st-milestone-icon { display: grid; place-items: center; width: 26px; height: 26px; flex-shrink: 0; border-radius: 6px; background: #221c2d; color: #b291dd; }
+.st-milestone-icon.pub { background: #142a28; color: #7ecdc2; }
+.st-milestone-icon.ren { background: #14231a; color: #8ed9b4; }
+.st-milestone-icon.fail { background: #2a1a19; color: #d99790; }
+.st-milestone-copy { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.st-milestone-copy strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; font-weight: 500; color: #d8cfe2; }
+.st-milestone-copy em { color: #6d6675; font: 8px var(--mono); font-style: normal; }
+
+/* Light theme */
+html[data-theme="light"] { --bg:#f5f3f8;--surface:#ffffff;--surface-raised:#faf9fc;--line:#e2dce9;--line-soft:#ece8f1;--text:#241d2e;--muted:#6d6478;--dim:#9a92a6; }
+html[data-theme="light"] body, html[data-theme="light"] .app-shell { background: radial-gradient(ellipse 44% 30% at 79% -10%,#8b6ac01a,transparent 78%), var(--bg); color: var(--text); }
+html[data-theme="light"] .sidebar { background: #ffffff; border-right: 1px solid var(--line); }
+html[data-theme="light"] .nav-heading, html[data-theme="light"] .st-project-time, html[data-theme="light"] .st-milestone-copy em, html[data-theme="light"] .st-bell-item small { color: #8a8095; }
+html[data-theme="light"] .nav-item:hover { background: #f2eef8; }
+html[data-theme="light"] .nav-item.active { background: #efe8fa; color: #4a3568; }
+html[data-theme="light"] .topbar, html[data-theme="light"] .page-footer { border-color: var(--line); }
+html[data-theme="light"] .icon-button, html[data-theme="light"] .st-bell { border-color: var(--line); }
+html[data-theme="light"] .st-panel { background: #ffffff; }
+html[data-theme="light"] .st-panel-head h2, html[data-theme="light"] .st-empty strong, html[data-theme="light"] .st-milestone-copy strong, html[data-theme="light"] .st-detail-stats strong { color: var(--text); }
+html[data-theme="light"] .st-tabs, html[data-theme="light"] .st-segmented { background: #f4f1f8; }
+html[data-theme="light"] .st-tabs button.active, html[data-theme="light"] .st-segmented button.active { background: #e9e0f7; color: #4a3568; box-shadow: inset 0 0 0 1px #d8c8f0; }
+html[data-theme="light"] .st-tabs button span { background: #e4dcee; color: #6a5a86; }
+html[data-theme="light"] .st-form select, html[data-theme="light"] .st-form textarea, html[data-theme="light"] .st-form input:not([type="checkbox"]):not([type="range"]), html[data-theme="light"] .transcription-controls select, html[data-theme="light"] .transcription-controls input, html[data-theme="light"] .form-input { background: #ffffff; border-color: #d8d2e2; color: var(--text); }
+html[data-theme="light"] .st-form select, html[data-theme="light"] .st-form textarea, html[data-theme="light"] .st-form input:not([type="checkbox"]):not([type="range"]) { color: var(--text); }
+html[data-theme="light"] .st-job, html[data-theme="light"] .st-note, html[data-theme="light"] .st-candidate, html[data-theme="light"] .st-clip-card, html[data-theme="light"] .st-project-card, html[data-theme="light"] .st-mini-clip, html[data-theme="light"] .st-bell-panel, html[data-theme="light"] .st-bell-item, html[data-theme="light"] .st-toggle, html[data-theme="light"] .st-social-card, html[data-theme="light"] .st-whisper-row, html[data-theme="light"] .st-export-row, html[data-theme="light"] .st-modal-card, html[data-theme="light"] .st-tl-track, html[data-theme="light"] .st-music-chip, html[data-theme="light"] .st-icon-action, html[data-theme="light"] .st-tip { background: #ffffff; border-color: var(--line); color: var(--text); }
+html[data-theme="light"] .st-clip-thumb { background: #f0ecf5; }
+html[data-theme="light"] .st-job-stage, html[data-theme="light"] .st-muted, html[data-theme="light"] .st-clip-meta, html[data-theme="light"] .st-panel-head p, html[data-theme="light"] .st-section-head p, html[data-theme="light"] .st-field, html[data-theme="light"] .st-field small, html[data-theme="light"] .st-note, html[data-theme="light"] .st-candidate-reason, html[data-theme="light"] .st-candidate blockquote { color: var(--muted); }
+html[data-theme="light"] .st-candidate-score { color: #5b3f8a; }
+html[data-theme="light"] .st-progress { background: #e8e3ef; }
+html[data-theme="light"] .st-modal-backdrop { background: #1d172888; }
+html[data-theme="light"] .st-empty-icon, html[data-theme="light"] .st-tl-lane-label { background: #f2eef8; }
+html[data-theme="light"] .st-bell-item { background: #f7f5fa; }
+html[data-theme="light"] .st-toggle-track { background: #ddd6e6; }
+html[data-theme="light"] .st-bell-panel { box-shadow: 0 20px 50px #2a203c26; }
+html[data-theme="light"] .toast { background: #241d2e; color: #f5f3f8; }
