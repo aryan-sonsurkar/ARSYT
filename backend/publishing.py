@@ -73,7 +73,7 @@ class PublishingService:
 
     def __init__(self, jobs: Any) -> None:
         self.jobs = jobs
-        self._oauth_states: dict[str, str] = {}
+        self._oauth_states: dict[str, Any] = {}
 
     # -- status ------------------------------------------------------------
     def status(self) -> dict:
@@ -109,21 +109,17 @@ class PublishingService:
         state = uuid.uuid4().hex
         flow = Flow.from_client_secrets_file(str(client_secret_path()), scopes=[OAUTH_SCOPE])
         flow.redirect_uri = REDIRECT_URI
-        url, self._oauth_states[state] = flow.authorization_url(
+        url, _state = flow.authorization_url(
             access_type="offline", include_granted_scopes="false", prompt="consent", state=state
-        ), state
-        return url
+        )
+        # Keep the flow itself: it holds the PKCE code_verifier needed at token exchange.
+        self._oauth_states[state] = flow
+        return str(url)
 
     def exchange_code(self, state: str, code: str) -> dict:
-        if state not in self._oauth_states:
+        flow = self._oauth_states.pop(state, None)
+        if flow is None:
             raise IngestionError("Unknown OAuth state. Start the connection again.")
-        try:
-            from google_auth_oauthlib.flow import Flow
-        except ImportError as exc:  # pragma: no cover
-            raise IngestionError("The Google API client libraries are not installed.") from exc
-        self._oauth_states.pop(state, None)
-        flow = Flow.from_client_secrets_file(str(client_secret_path()), scopes=[OAUTH_SCOPE], state=state)
-        flow.redirect_uri = REDIRECT_URI
         flow.fetch_token(code=code)
         credentials = flow.credentials
         token_payload = {
