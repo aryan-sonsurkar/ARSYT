@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import {
-  Captions, Check, Copy, Download, Film, Flame, LoaderCircle, Package,
+  Captions, Check, ChevronsLeft, ChevronsRight, Copy, Download, Film, Flame, LoaderCircle, Package,
   PencilLine, Play, Sparkles, Trash2, UploadCloud, WandSparkles, Youtube,
 } from "lucide-react";
 import { api, AppSettings, Clip, formatBytes, formatTimestamp, PublishRequest, relativeTime, SocialVariant } from "@/lib/api";
@@ -117,6 +117,23 @@ export function ClipCard({ clip, settings, musicFiles = [], showProject = false,
       onChanged();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not save the title.");
+    } finally { setBusy(false); }
+  }
+
+  async function nudge(edge: "start" | "end", delta: number) {
+    setBusy(true); setError("");
+    try {
+      const start = edge === "start" ? Math.max(0, clip.start_time + delta) : clip.start_time;
+      const end = edge === "end" ? clip.end_time + delta : clip.end_time;
+      if (end - start < 3) {
+        onToast("A clip must stay at least three seconds long.");
+        return;
+      }
+      await api.updateClip(clip.id, { start_time: Number(start.toFixed(2)), end_time: Number(end.toFixed(2)) });
+      onToast(`Clip ${edge} moved ${delta > 0 ? "+" : ""}${delta}s.`);
+      onChanged();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not move the clip boundary.");
     } finally { setBusy(false); }
   }
 
@@ -379,21 +396,50 @@ export function ClipCard({ clip, settings, musicFiles = [], showProject = false,
           <Field label="Clip title">
             <input className="form-input" value={title} maxLength={140} onChange={(event) => setTitle(event.target.value)} />
           </Field>
-          <div className="st-form-grid two">
-            <Field label="Generated title"><input className="form-input" readOnly value={clip.metadata?.title ?? ""} /></Field>
-            <Field label="Category"><input className="form-input" readOnly value={clip.metadata?.category ?? ""} /></Field>
-          </div>
-          {(clip.metadata?.title_variants ?? []).filter((variant) => variant && variant !== clip.metadata?.title).length > 0 && (
-            <div className="st-form-grid two">
-              {(clip.metadata?.title_variants ?? []).filter((variant) => variant && variant !== clip.metadata?.title).map((variant) => (
-                <Field label="Title variant (A/B)" key={variant}>
-                  <div className="st-inline-actions">
-                    <input className="form-input" readOnly value={variant} />
-                    <button className="secondary-button sm" onClick={() => { setTitle(variant); onToast("Title variant applied — press Save title to keep it."); }}>Use</button>
-                  </div>
-                </Field>
-              ))}
+
+          <Field label="Fine trim" hint="Nudge the clip boundaries in half-second or 5-second steps. Requires a re-render to appear in the video.">
+            <div className="st-trim-row">
+              <div className="st-trim-edge">
+                <span className="st-trim-label">Start {formatTimestamp(clip.start_time)}</span>
+                <div className="st-inline-actions">
+                  <button className="secondary-button sm" disabled={busy || clip.start_time <= 0} onClick={() => void nudge("start", -5)} title="Start −5s"><ChevronsLeft size={13} /> 5s</button>
+                  <button className="secondary-button sm" disabled={busy || clip.start_time <= 0} onClick={() => void nudge("start", -0.5)} title="Start −0.5s"><ChevronsLeft size={13} /> .5s</button>
+                  <button className="secondary-button sm" disabled={busy} onClick={() => void nudge("start", 0.5)}>.5s <ChevronsRight size={13} /></button>
+                  <button className="secondary-button sm" disabled={busy} onClick={() => void nudge("start", 5)}>5s <ChevronsRight size={13} /></button>
+                </div>
+              </div>
+              <div className="st-trim-edge">
+                <span className="st-trim-label">End {formatTimestamp(clip.end_time)}</span>
+                <div className="st-inline-actions">
+                  <button className="secondary-button sm" disabled={busy} onClick={() => void nudge("end", -5)}><ChevronsLeft size={13} /> 5s</button>
+                  <button className="secondary-button sm" disabled={busy} onClick={() => void nudge("end", -0.5)}><ChevronsLeft size={13} /> .5s</button>
+                  <button className="secondary-button sm" disabled={busy} onClick={() => void nudge("end", 0.5)}>.5s <ChevronsRight size={13} /></button>
+                  <button className="secondary-button sm" disabled={busy} onClick={() => void nudge("end", 5)}>5s <ChevronsRight size={13} /></button>
+                </div>
+              </div>
             </div>
+          </Field>
+
+          {(clip.metadata?.title_variants ?? []).filter((variant) => variant && variant !== clip.metadata?.title).length > 0 && (
+            <Field label="Title variants (A/B)" hint="How each option reads in the Shorts feed. Click a card to apply it, then Save title.">
+              <div className="st-feed-grid">
+                {[
+                  clip.metadata?.title ?? "",
+                  ...(clip.metadata?.title_variants ?? []).filter((variant) => variant && variant !== clip.metadata?.title),
+                ].map((variant, index) => (
+                  <button key={`${variant}-${index}`} className={`st-feed-mock ${title === variant ? "current" : ""}`} onClick={() => { setTitle(variant); onToast("Title applied — press Save title to keep it."); }}>
+                    <span className="st-feed-screen">
+                      {rendered && clip.thumbnail_path
+                        // eslint-disable-next-line @next/next/no-img-element
+                        ? <img src={api.clipThumbnailUrl(clip.id)} alt="" />
+                        : <span className="st-feed-fallback"><Film size={20} /></span>}
+                      <span className="st-feed-title">{variant}</span>
+                    </span>
+                    <span className="st-feed-label">{title === variant ? "Current title" : `Variant ${index}`}</span>
+                  </button>
+                ))}
+              </div>
+            </Field>
           )}
           <Field label="Description">
             <textarea className="form-input" rows={4} readOnly value={clip.metadata?.description ?? ""} />
