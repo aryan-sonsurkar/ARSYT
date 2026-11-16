@@ -389,3 +389,27 @@
   .st-modal-card { padding: 14px; }
   .st-compliance { align-items: flex-start; }
 }
+
+/* Timeline strip */
+.st-timeline { display: flex; flex-direction: column; gap: 6px; }
+.st-tl-lane { display: grid; grid-template-columns: 26px 1fr; align-items: center; gap: 8px; }
+.st-tl-lane-label { display: grid; place-items: center; width: 22px; height: 22px; border: 1px solid var(--line); border-radius: 5px; background: #17131d; color: #a98cce; }
+.st-tl-track { position: relative; height: 26px; border: 1px solid var(--line-soft); border-radius: 5px; background: #0d0c10; overflow: hidden; }
+.st-timeline button.st-tl-candidate, .st-timeline button.st-tl-clip {
+  position: absolute; top: 3px; bottom: 3px; min-width: 10px; padding: 0 5px; border: 1px solid transparent;
+  border-radius: 3px; overflow: hidden; text-align: left; cursor: pointer; transition: filter 0.12s;
+}
+.st-tl-candidate { background: linear-gradient(120deg, #6f47b2, #8a5cd6); }
+.st-tl-candidate.approved { background: linear-gradient(120deg, #3c9c72, #55b98a); }
+.st-tl-candidate.rejected { background: linear-gradient(120deg, #4a4048, #5c5260); }
+.st-tl-clip { background: #3a3050; border-color: #6f47b2; }
+.st-tl-clip.rendered { background: linear-gradient(120deg, #24543f, #2f7a58); border-color: #4d9d74; }
+.st-tl-clip.rendering, .st-tl-clip.queued { background: linear-gradient(120deg, #3d3163, #54428a); border-color: #8a5cd6; }
+.st-tl-clip.failed { background: linear-gradient(120deg, #5c2c28, #7a3c34); border-color: #b06058; }
+.st-tl-clip.published { background: linear-gradient(120deg, #1f4a4a, #2b6c68); border-color: #4fa39b; }
+.st-tl-candidate:hover, .st-tl-clip:hover { filter: brightness(1.25); z-index: 2; }
+.st-timeline button span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #ffffffd8; font-size: 9px; font-weight: 600; line-height: 18px; }
+.st-tl-scale { position: relative; height: 13px; margin-left: 34px; }
+.st-tl-scale > span { position: absolute; transform: translateX(2px); color: #57505e; font: 8px var(--mono); }
+.st-tl-hover { max-width: 46%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #b6aac6; font: 9px var(--mono); }
+.st-tl-scale span:first-child { display: none; }

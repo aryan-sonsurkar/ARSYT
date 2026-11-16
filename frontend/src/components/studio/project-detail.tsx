@@ -11,6 +11,7 @@ import {
 import { TranscriptionPanel } from "@/components/transcription-panel";
 import { ClipCard } from "@/components/studio/clip-card";
 import { JobList } from "@/components/studio/job-list";
+import { TimelineStrip } from "@/components/studio/timeline-strip";
 import { Busy, EmptyState, Field, InlineNote, Panel, ProgressBar, StatusBadge } from "@/components/studio/ui";
 
 type Props = {
@@ -232,6 +233,16 @@ export function ProjectDetailView({ projectId, onBack, onChanged, onToast }: Pro
       </div>
 
       {tab === "overview" && (
+        <TimelineStrip
+          candidates={detail.candidates}
+          clips={detail.clips}
+          duration={Number(metadata.duration_seconds ?? 0)}
+          onOpenCandidate={() => setTab("highlights")}
+          onOpenClip={() => setTab("clips")}
+        />
+      )}
+
+      {tab === "overview" && (
         <>
           <div className="st-source-grid">
             <Panel title="Source media" subtitle="The original file is preserved inside this project.">
@@ -351,6 +362,7 @@ export function ProjectDetailView({ projectId, onBack, onChanged, onToast }: Pro
           {candidates.length ? (
             <div className="st-candidate-list">
               {candidates.map((candidate) => (
+                <div key={candidate.id} id={`candidate-${candidate.id}`}>
                 <CandidateCard
                   key={candidate.id}
                   candidate={candidate}
@@ -368,6 +380,7 @@ export function ProjectDetailView({ projectId, onBack, onChanged, onToast }: Pro
                   onSaveEdit={() => void saveCandidate()}
                   onAction={(action) => void candidateAction(candidate.id, action)}
                 />
+                </div>
               ))}
             </div>
           ) : (
@@ -402,14 +415,15 @@ export function ProjectDetailView({ projectId, onBack, onChanged, onToast }: Pro
           {detail.clips.length ? (
             <div className="st-clip-grid">
               {detail.clips.map((clip) => (
+                <div key={clip.id} id={`clip-${clip.id}`}>
                 <ClipCard
-                  key={clip.id}
                   clip={clip}
                   settings={settings}
                   musicFiles={detail.music_files}
                   onChanged={() => { void load(true); onChanged(); }}
                   onToast={onToast}
                 />
+                </div>
               ))}
             </div>
           ) : (
