@@ -16,7 +16,7 @@ METADATA_SYSTEM = (
 PROMPT = """Create metadata for this short-form clip.
 
 Return JSON exactly in this shape:
-{{"title":"Specific title under 80 characters","description":"One or two accurate sentences about the clip","hashtags":["#Shorts","#Podcast","#Topic"],"category":"Motivational","thumbnail_text":"3 to 6 punchy words"}}
+{{"title":"Specific title under 80 characters","title_variants":["Two more different titles under 80 characters"],"description":"One or two accurate sentences about the clip","hashtags":["#Shorts","#Podcast","#Topic"],"category":"Motivational","thumbnail_text":"3 to 6 punchy words"}}
 
 Transcript excerpt:
 {excerpt}
@@ -26,6 +26,8 @@ Detected category: {category}
 
 Rules:
 - The description must accurately reflect the excerpt.
+- title_variants must contain exactly 3 alternative titles, each under 80 characters,
+  each a different angle (question, number/contrast, direct statement). No clickbait lies.
 - 3 to 8 hashtags, each starting with #.
 - thumbnail_text must be 3 to 6 words, no hashtags.
 - Do not claim anything that is not in the excerpt.
@@ -48,14 +50,38 @@ def _fallback(clip: dict[str, Any], excerpt: str) -> dict[str, Any]:
             clean_tags.append(tag)
     words = [word.strip(".,!?;:\"'") for word in title.split() if word.strip(".,!?;:\"'")]
     thumbnail = " ".join(words[:5]).upper() or "PODCAST CLIP"
+    fallback_variants = [title]
+    if excerpt:
+        for candidate in (
+            _clean(excerpt.split(".")[0], 80),
+            f"Why {category.lower()} actually works",
+        ):
+            if candidate and candidate not in fallback_variants:
+                fallback_variants.append(candidate)
     return {
         "title": title,
+        "title_variants": fallback_variants,
         "description": _clean(excerpt, 300) or "A short clip from this podcast conversation.",
         "hashtags": clean_tags,
         "category": category,
         "thumbnail_text": thumbnail,
         "generated_by": "local-fallback",
     }
+
+
+def _title_variants(raw: Any, title: str) -> list[str]:
+    """Exactly 3 distinct title variants (A/B testing), title itself first."""
+    variants: list[str] = []
+    candidates = raw.get("title_variants") if isinstance(raw, dict) else None
+    if isinstance(candidates, str):
+        candidates = [candidates]
+    if isinstance(candidates, list):
+        for candidate in candidates:
+            text = _clean(candidate, 80)
+            if text and text not in variants:
+                variants.append(text)
+    variants = [item for item in variants if item != title]
+    return [title] + variants[:3]
 
 
 def _validate(raw: Any, clip: dict[str, Any], excerpt: str) -> dict[str, Any] | None:
@@ -82,6 +108,7 @@ def _validate(raw: Any, clip: dict[str, Any], excerpt: str) -> dict[str, Any] | 
     thumbnail = _clean(raw.get("thumbnail_text"), 48) or " ".join(title.split()[:5]).upper()
     return {
         "title": title,
+        "title_variants": _title_variants(raw, title),
         "description": description,
         "hashtags": clean_tags[:8],
         "category": _clean(raw.get("category"), 40) or _clean(clip.get("category"), 40) or "Insight",

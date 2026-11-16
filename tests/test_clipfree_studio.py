@@ -218,6 +218,36 @@ def test_render_writes_metadata_before_thumbnail_and_burns_hook_text(
     assert clip["thumbnail_path"] and Path(clip["thumbnail_path"]).is_file()
 
 
+def test_metadata_includes_three_distinct_title_variants() -> None:
+    clip = {"title": "Working title", "category": "Motivational"}
+    excerpt = "Two founders walked onto Shark Tank and changed their company forever. Investors were shocked."
+    raw = {
+        "title": "Working title",
+        "title_variants": [
+            "What Shark Tank taught two founders",
+            "The number that shocked the investors",
+            "Working title",                      # duplicate of the main title
+            "  ",                                  # blank is dropped
+        ],
+        "description": "Accurate description.", "hashtags": ["#Shorts", "#Podcast"],
+        "category": "Motivational", "thumbnail_text": "SHARK TANK SHOCK",
+    }
+    from backend.metadata import _validate
+    validated = _validate(raw, clip, excerpt)
+    assert validated is not None
+    variants = validated["title_variants"]
+    assert variants[0] == "Working title"
+    assert len(variants) == 4 or len(variants) == 3   # title + up to 3 distinct angles
+    assert len(set(variants)) == len(variants)
+    assert "What Shark Tank taught two founders" in variants
+
+    # The local fallback also exposes variants so the studio always has choices.
+    from backend.metadata import _fallback
+    fallback = _fallback(clip, excerpt)
+    assert fallback["title_variants"][0] == clip["title"]
+    assert len(fallback["title_variants"]) >= 2
+
+
 def test_silence_plan_cuts_dead_air_and_retimes_captions() -> None:
     # 30 s clip with a 5 s dead-air hole between two sentences.
     content = {

@@ -40,7 +40,7 @@ export type Candidate = {
 };
 
 export type ClipMetadata = {
-  title?: string; description?: string; hashtags?: string[]; category?: string;
+  title?: string; title_variants?: string[]; description?: string; hashtags?: string[]; category?: string;
   thumbnail_text?: string; generated_by?: string;
 };
 

@@ -309,6 +309,18 @@ export function ClipCard({ clip, settings, musicFiles = [], showProject = false,
             <Field label="Generated title"><input className="form-input" readOnly value={clip.metadata?.title ?? ""} /></Field>
             <Field label="Category"><input className="form-input" readOnly value={clip.metadata?.category ?? ""} /></Field>
           </div>
+          {(clip.metadata?.title_variants ?? []).filter((variant) => variant && variant !== clip.metadata?.title).length > 0 && (
+            <div className="st-form-grid two">
+              {(clip.metadata?.title_variants ?? []).filter((variant) => variant && variant !== clip.metadata?.title).map((variant) => (
+                <Field label="Title variant (A/B)" key={variant}>
+                  <div className="st-inline-actions">
+                    <input className="form-input" readOnly value={variant} />
+                    <button className="secondary-button sm" onClick={() => { setTitle(variant); onToast("Title variant applied — press Save title to keep it."); }}>Use</button>
+                  </div>
+                </Field>
+              ))}
+            </div>
+          )}
           <Field label="Description">
             <textarea className="form-input" rows={4} readOnly value={clip.metadata?.description ?? ""} />
           </Field>

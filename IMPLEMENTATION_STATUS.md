@@ -70,6 +70,7 @@ ClipFree is a **local-only** podcast-to-Shorts studio built alongside the legacy
 - [x] Language picker + Hindi fonts: the transcription panel now offers a language dropdown (auto-detect, Hindi/Hinglish, English, Indian and world languages), and caption rendering automatically switches to Nirmala UI when Devanagari text is detected so Hindi captions render correctly instead of showing boxes.
 - [x] Platform caption presets: the render dialog has a "Platform safe area" choice (YouTube Shorts / Instagram Reels); Reels pushes captions ~150 px higher because its UI covers more of the lower frame.
 - [x] Silence trimming (opt-in): the render dialog's "Trim dead air" toggle cuts silences longer than 1.2 s inside a clip down to a ~0.35 s pause (`backend/silence.py`, FFmpeg trim/concat chains with `atrim` for audio) and re-times the transcript onto the trimmed timeline so burned-in captions and SRTs stay word-synchronised; clip source timestamps are unchanged.
+- [x] A/B title variants: metadata generation now returns the main title plus up to 3 distinct alternative angles (question, number/contrast, direct statement) with a deterministic fallback; the studio's metadata dialog shows each variant with a "Use" button that applies it to the clip title.
 - [x] Thumbnail generation from a real rendered frame.
 - [x] SRT sidecar for each clip.
 - [x] Single-clip export, batch export and per-project ZIP export with metadata.
@@ -81,7 +82,7 @@ ClipFree is a **local-only** podcast-to-Shorts studio built alongside the legacy
 - [x] Free-space checks, upload limits, filename/path containment and local-only networking.
 - [x] Persisted settings/templates with validation.
 - [x] Hash-based deep links: `#/projects`, `#/projects/<id>`, `#/clips`, `#/queue`, `#/settings`.
-- [x] Focused automated coverage: **38 passed** across ingestion, transcription and studio tests.
+- [x] Focused automated coverage: **39 passed** across ingestion, transcription and studio tests.
 - [x] Caption rendering hardened: opaque text colours, per-cue font fitting so long lines stay inside the 1080 px frame, smart wrapping inside the margins, and non-overlapping cue boundaries.
 - [x] FFmpeg progress parsing tolerates the `N/A` timestamps FFmpeg emits before the first frame, so renders no longer abort mid-pipeline.
 - [x] Real end-to-end acceptance run (project `e259be863a784c1f830f3101db4eea63`, run against the shipped commit):

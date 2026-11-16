@@ -19,7 +19,7 @@ Backend modules: `ingestion.py`, `transcription.py`, `ollama.py`, `highlights.py
 
 Frontend: new studio shell in `frontend/src/app/page.tsx`, components under `frontend/src/components/studio/`, typed client in `frontend/src/lib/api.ts`, styles in `frontend/src/app/studio.css`.
 
-Tests: `tests/test_clipfree_ingestion.py`, `test_clipfree_transcription.py`, `test_clipfree_studio.py` (**38 passed**), and `tests/e2e_workflow.py` (real media).
+Tests: `tests/test_clipfree_ingestion.py`, `test_clipfree_transcription.py`, `test_clipfree_studio.py` (**39 passed**), and `tests/e2e_workflow.py` (real media).
 
 ## YuNet face detection
 
@@ -40,6 +40,10 @@ The transcription panel's free-text language field is now a dropdown of common p
 ## Silence trimming (opt-in)
 
 `backend/silence.py` (`plan_trim`) finds gaps longer than 1.2 s between transcript words inside a clip and builds kept pieces that retain a natural ~0.35 s pause (a 0.05 s guard stops the first phoneme from being clipped). `ClipService._render_video` renders those pieces with FFmpeg `trim` (video) / `atrim` (audio) + `concat` chains and re-times the transcript onto the trimmed timeline (`_remap_content`), so burned-in captions and SRTs stay word-synchronised on the shorter video. The whole feature is behind the "Trim dead air" toggle in the render dialog (`RenderRequest.trim_silence`); clip source timestamps in the database stay untouched, and the plan is skipped entirely when no gap is long enough to matter. A real-FFmpeg smoke test (30 s source → 25.4 s output) validated the generated chains.
+
+## A/B title variants
+
+`backend/metadata.py` asks the local model for three alternative titles in different angles and stores them as `title_variants` (main title first, duplicates/blank entries dropped, each capped at 80 characters). The local fallback also produces variants from the excerpt so the studio always has choices offline. The clip metadata dialog renders every variant with a "Use" button that loads it into the editable title field — applying a variant is explicit and saved with "Save title".
 
 ## Natural cut boundaries
 
