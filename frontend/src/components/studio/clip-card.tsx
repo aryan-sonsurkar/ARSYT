@@ -3,9 +3,9 @@
 import { useState } from "react";
 import {
   Captions, Check, Copy, Download, Film, Flame, LoaderCircle, Package,
-  PencilLine, Play, Sparkles, Trash2, WandSparkles,
+  PencilLine, Play, Sparkles, Trash2, UploadCloud, WandSparkles,
 } from "lucide-react";
-import { api, AppSettings, Clip, formatBytes, formatTimestamp, relativeTime, SocialVariant } from "@/lib/api";
+import { api, AppSettings, Clip, formatBytes, formatTimestamp, PublishRequest, relativeTime, SocialVariant } from "@/lib/api";
 import { Busy, EmptyState, Field, InlineNote, Modal, StatusBadge, Toggle } from "@/components/studio/ui";
 
 type MusicFile = { name: string; size_bytes: number; path: string };
@@ -19,7 +19,7 @@ type Props = {
   onToast: (message: string) => void;
 };
 
-type Dialog = "" | "preview" | "render" | "metadata" | "social";
+type Dialog = "" | "preview" | "render" | "metadata" | "social" | "publish";
 
 export function ClipCard({ clip, settings, musicFiles = [], showProject = false, onChanged, onToast }: Props) {
   const [dialog, setDialog] = useState<Dialog>("");
@@ -39,6 +39,15 @@ export function ClipCard({ clip, settings, musicFiles = [], showProject = false,
   const [ducking, setDucking] = useState(true);
   const [trimSilence, setTrimSilence] = useState(false);
   const [metadataModel, setMetadataModel] = useState(settings?.values.metadata_model ?? "");
+  const [pubTitle, setPubTitle] = useState("");
+  const [pubDescription, setPubDescription] = useState("");
+  const [pubTags, setPubTags] = useState("");
+  const [pubPrivacy, setPubPrivacy] = useState<PublishRequest["privacy"]>("public");
+  const [pubCategory, setPubCategory] = useState<PublishRequest["category"]>("entertainment");
+  const [pubConfirmText, setPubConfirmText] = useState("");
+  const [pubAuthed, setPubAuthed] = useState<boolean | null>(null);
+  const [pubClientConfigured, setPubClientConfigured] = useState<boolean | null>(null);
+  const [pubStatusChecking, setPubStatusChecking] = useState(false);
   const [error, setError] = useState("");
 
   const rendered = clip.state === "rendered" && clip.has_output;
@@ -57,6 +66,21 @@ export function ClipCard({ clip, settings, musicFiles = [], showProject = false,
       setError("");
     }
     if (next === "metadata") setTitle(clip.title);
+    if (next === "publish") {
+      setPubTitle(clip.title);
+      setPubDescription(clip.metadata?.description ?? "");
+      setPubTags((clip.metadata?.hashtags ?? []).join(" "));
+      setPubPrivacy("public");
+      setPubCategory("entertainment");
+      setPubConfirmText("");
+      setPubAuthed(null);
+      setPubClientConfigured(null);
+      setPubStatusChecking(true);
+      void api.publishingStatus()
+        .then((status) => { setPubAuthed(status.authorized); setPubClientConfigured(status.client_configured); })
+        .catch(() => { setPubAuthed(false); setPubClientConfigured(false); })
+        .finally(() => setPubStatusChecking(false));
+    }
     if (next === "social") {
       setCopied("");
       void api.clipSocial(clip.id)
@@ -156,6 +180,50 @@ export function ClipCard({ clip, settings, musicFiles = [], showProject = false,
     setSocial((current) => current.map((item) => (item.style === style ? { ...item, ...patch } : item)));
   }
 
+  async function publish() {
+    if (pubConfirmText !== "PUBLISH") {
+      setError("Type PUBLISH exactly to confirm the upload to your channel.");
+      return;
+    }
+    setBusy(true); setError("");
+    try {
+      await api.publishClip(clip.id, {
+        title: pubTitle,
+        description: pubDescription,
+        tags: pubTags.split(/[\s,]+/).filter(Boolean),
+        privacy: pubPrivacy,
+        category: pubCategory,
+      }, true);
+      onToast("Upload queued to your YouTube channel. Progress is live in the queue.");
+      setDialog("");
+      onChanged();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not queue the upload.");
+    } finally { setBusy(false); }
+  }
+
+  async function connectYouTube() {
+    setBusy(true); setError("");
+    try {
+      const result = await api.publishingAuthUrl();
+      window.open(result.authorization_url, "_blank", "noopener");
+      onToast("Google consent opened in a new tab. Finish it, then reopen this dialog.");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not start the OAuth flow.");
+    } finally { setBusy(false); }
+  }
+
+  async function disconnectYouTube() {
+    setBusy(true);
+    try {
+      await api.publishingDisconnect();
+      setPubAuthed(false);
+      onToast("YouTube account disconnected.");
+    } catch {
+      onToast("Disconnect failed.");
+    } finally { setBusy(false); }
+  }
+
   async function remove() {
     if (!window.confirm(`Delete “${clip.title}” and its rendered files? This cannot be undone.`)) return;
     setBusy(true);
@@ -216,6 +284,7 @@ export function ClipCard({ clip, settings, musicFiles = [], showProject = false,
             {rendered && <a className="st-icon-action" title="Download MP4" href={api.clipDownloadUrl(clip.id)}><Download size={14} /></a>}
             {rendered && <a className="st-icon-action" title="Download SRT" href={api.clipCaptionsUrl(clip.id)}><Captions size={14} /></a>}
             {rendered && <button className="st-icon-action" title="Export package" disabled={busy} onClick={() => void exportClip()}><Package size={14} /></button>}
+            {rendered && <button className="st-icon-action" title="Publish to YouTube" disabled={busy} onClick={() => openDialog("publish")}><UploadCloud size={14} /></button>}
             <button className="st-icon-action danger" title="Delete clip" disabled={busy} onClick={() => void remove()}><Trash2 size={14} /></button>
           </div>
         </div>
@@ -371,6 +440,75 @@ export function ClipCard({ clip, settings, musicFiles = [], showProject = false,
           <button className="primary-button" onClick={() => void generateSocial()} disabled={busy}>
             {busy ? <Busy label="Writing…" /> : <><Flame size={15} /> {social.length ? "Rewrite" : "Write captions"}</>}
           </button>
+        </div>
+      </Modal>
+
+      <Modal open={dialog === "publish"} onClose={() => setDialog("")} title="Publish to YouTube" subtitle="Uploads go to your own channel via the official Data API. Nothing is uploaded until you type PUBLISH." width={620}>
+        <div className="st-form">
+          {pubStatusChecking ? (
+            <InlineNote><Busy label="Checking YouTube connection…" /></InlineNote>
+          ) : pubAuthed ? (
+            <InlineNote tone="ok">YouTube account connected. Uploads use your own OAuth credentials stored locally.</InlineNote>
+          ) : pubClientConfigured ? (
+            <InlineNote tone="error">Not authorized yet. Connect your own YouTube account first.</InlineNote>
+          ) : (
+            <InlineNote tone="error">No OAuth client yet. Save your Google Cloud client_secret.json to the path below (local data folder, publishing subfolder), then connect.</InlineNote>
+          )}
+          {!pubAuthed && (
+            <div className="st-modal-actions">
+              <Field label="Client secret path" hint="Create it in Google Cloud Console with the youtube.upload scope as an installed/desktop app.">
+                <input className="form-input" readOnly value={pubClientConfigured ? "client_secret.json found ✓" : "clipfree_data/publishing/client_secret.json"} />
+              </Field>
+              <button className="primary-button" onClick={() => void connectYouTube()} disabled={busy || !pubClientConfigured}>
+                <UploadCloud size={15} /> Connect YouTube account
+              </button>
+              {pubAuthed === false && pubClientConfigured && (
+                <button className="secondary-button" onClick={() => void disconnectYouTube()} disabled={busy}>Clear saved token</button>
+              )}
+            </div>
+          )}
+          {pubAuthed && (
+            <>
+              <Field label="Video title" hint="YouTube Shorts titles are capped at 100 characters.">
+                <input className="form-input" value={pubTitle} maxLength={100} onChange={(event) => setPubTitle(event.target.value)} />
+              </Field>
+              <Field label="Description">
+                <textarea className="form-input" rows={3} value={pubDescription} onChange={(event) => setPubDescription(event.target.value)} />
+              </Field>
+              <Field label="Tags" hint="Space or comma separated.">
+                <input className="form-input" value={pubTags} onChange={(event) => setPubTags(event.target.value)} />
+              </Field>
+              <div className="st-form-grid two">
+                <Field label="Visibility">
+                  <select value={pubPrivacy} onChange={(event) => setPubPrivacy(event.target.value as PublishRequest["privacy"])}>
+                    <option value="public">Public</option>
+                    <option value="unlisted">Unlisted</option>
+                    <option value="private">Private</option>
+                  </select>
+                </Field>
+                <Field label="Category">
+                  <select value={pubCategory} onChange={(event) => setPubCategory(event.target.value as PublishRequest["category"])}>
+                    <option value="entertainment">Entertainment</option>
+                    <option value="people">People &amp; Blogs</option>
+                    <option value="gaming">Gaming</option>
+                    <option value="education">Education</option>
+                  </select>
+                </Field>
+              </div>
+              {clip.metadata?.youtube_url && <InlineNote tone="ok">Already published: {clip.metadata.youtube_url}</InlineNote>}
+              <Field label="Type PUBLISH to confirm the upload">
+                <input className="form-input" value={pubConfirmText} placeholder="PUBLISH" onChange={(event) => setPubConfirmText(event.target.value)} />
+              </Field>
+              {error && <InlineNote tone="error">{error}</InlineNote>}
+              <div className="st-modal-actions">
+                <button className="secondary-button" onClick={() => setDialog("")} disabled={busy}>Cancel</button>
+                <button className="primary-button" onClick={() => void publish()} disabled={busy || pubConfirmText !== "PUBLISH"}>
+                  {busy ? <Busy label="Queueing…" /> : <><UploadCloud size={15} /> Upload as Short</>}
+                </button>
+              </div>
+            </>
+          )}
+          {error && !pubAuthed && <InlineNote tone="error">{error}</InlineNote>}
         </div>
       </Modal>
     </>

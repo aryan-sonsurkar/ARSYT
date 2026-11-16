@@ -40,3 +40,8 @@ faster-whisper>=1.1.0
 # face tracking falls back to a safe centre crop (see KNOWN_ISSUES.md).
 opencv-python-headless>=4.9.0
 numpy>=1.26.0
+
+# ClipFree YouTube publish (official API, user's own OAuth client only)
+google-api-python-client>=2.100.0
+google-auth-oauthlib>=1.2.0
+google-auth-httplib2>=0.2.0

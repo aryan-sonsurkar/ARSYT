@@ -144,6 +144,16 @@ class PipelineStartRequest(BaseModel):
         return value
 
 
+class PublishStartRequest(BaseModel):
+    """Explicitly-confirmed YouTube upload of one rendered clip."""
+
+    title: str = Field(default="", max_length=100)
+    description: str = Field(default="", max_length=5000)
+    tags: list[str] = Field(default_factory=list, max_length=30)
+    privacy: str = Field(default="public", pattern="^(public|unlisted|private)$")
+    category: str = Field(default="entertainment", pattern="^(people|gaming|education|entertainment)$")
+
+
 class BatchCandidateRequest(BaseModel):
     candidate_ids: list[str] = Field(min_length=1, max_length=100)
 

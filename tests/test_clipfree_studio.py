@@ -703,3 +703,90 @@ def test_full_pipeline_skips_finished_stages_and_exports_zip(tmp_path: Path, mon
             f"/api/projects/{project_id}/export/download?name={zips[0].name}"
         )
         assert download.status_code == 200
+
+
+def test_publish_request_validates_payload() -> None:
+    from backend.publishing import PublishRequest
+    from backend.ingestion import IngestionError
+
+    request = PublishRequest.from_payload({
+        "title": "My Short", "description": "Desc", "tags": [" #shorts ", "", "podcast"],
+        "privacy": "unlisted", "category": "gaming",
+    })
+    assert request.title == "My Short"
+    assert request.tags == ["#shorts", "podcast"]
+    assert request.privacy == "unlisted"
+
+    for payload in ({"privacy": "sneaky"}, {"category": "unknown"}):
+        with pytest.raises(IngestionError):
+            PublishRequest.from_payload(payload)
+
+
+def test_publish_queue_requires_client_token_confirm_and_render(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("CLIPFREE_DATA_DIR", str(tmp_path / "pub-data"))
+    from backend.main import app
+
+    with TestClient(app) as client:
+        status = client.get("/api/publishing/status").json()
+        assert status["client_configured"] is False
+        assert status["authorized"] is False
+
+        # OAuth cannot start without the user's own client_secret.json.
+        auth = client.post("/api/publishing/auth/start")
+        assert auth.status_code == 400
+        assert "client_secret.json" in auth.json()["detail"]
+
+        project_id = client.post("/api/projects", json={"name": "Publish Guard"}).json()["id"]
+        clip_id = "seed-pub-clip"
+        now = "2026-01-01T00:00:00+00:00"
+        with connect() as conn:
+            conn.execute(
+                """INSERT INTO clips(id,project_id,title,start_time,end_time,state,created_at,updated_at)
+                   VALUES(?,?,?,?,?,?,?,?)""",
+                (clip_id, project_id, "Publish guard clip", 10.0, 40.0, "rendered", now, now),
+            )
+
+        # Explicit confirmation is mandatory — never publish silently.
+        unconfirmed = client.post(f"/api/clips/{clip_id}/publish", json={"title": "X"})
+        assert unconfirmed.status_code == 409
+        assert "confirm=true" in unconfirmed.json()["detail"]
+
+        confirmed = client.post(f"/api/clips/{clip_id}/publish?confirm=true", json={"title": "X"})
+        assert confirmed.status_code == 409
+        assert "Not authorized" in confirmed.json()["detail"]
+
+        # Without a rendered file there is nothing to upload either.
+        token = tmp_path / "pub-data" / "publishing" / "token.json"
+        token.write_text(json.dumps({"token": "fake", "scopes": ["https://www.googleapis.com/auth/youtube.upload"]}), encoding="utf-8")
+        monkeypatch.setattr("backend.publishing.PublishingService._load_credentials", lambda self: object())
+        no_render = client.post(f"/api/clips/{clip_id}/publish?confirm=true", json={"title": "X"})
+        assert no_render.status_code == 409
+        assert "Render" in no_render.json()["detail"] or "rendered video" in no_render.json()["detail"]
+
+
+def test_recover_interrupted_publishes_fails_stranded_jobs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("CLIPFREE_DATA_DIR", str(tmp_path / "rec-data"))
+    from backend.publishing import recover_interrupted_publishes
+
+    init_db()
+    project_id = "proj-rec"
+    now = "2026-01-01T00:00:00+00:00"
+    with connect() as conn:
+        conn.execute("INSERT INTO projects(id,name,created_at,updated_at) VALUES(?,?,?,?)",
+                     (project_id, "Recovery", now, now))
+        conn.execute("INSERT INTO clips(id,project_id,title,start_time,end_time,state,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)",
+                     ("clip-rec", project_id, "Rec", 0.0, 10.0, "publishing", now, now))
+        conn.execute("INSERT INTO jobs(id,project_id,kind,state,stage,progress,payload_json,created_at) VALUES(?,?,?,?,?,?,?,?)",
+                     ("job-rec", project_id, "publish", "running", "uploading to YouTube", 30,
+                      json.dumps({"clip_id": "clip-rec"}), now))
+
+    recover_interrupted_publishes()
+    job = row("SELECT * FROM jobs WHERE id='job-rec'")
+    assert job["state"] == "failed"
+    assert "restarted" in job["error"].lower()
+    clip = row("SELECT * FROM clips WHERE id='clip-rec'")
+    assert clip["state"] == "failed"

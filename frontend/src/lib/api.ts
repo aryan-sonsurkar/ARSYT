@@ -42,6 +42,7 @@ export type Candidate = {
 export type ClipMetadata = {
   title?: string; title_variants?: string[]; description?: string; hashtags?: string[]; category?: string;
   thumbnail_text?: string; generated_by?: string;
+  youtube_video_id?: string; youtube_url?: string;
 };
 
 export type SocialVariant = {
@@ -115,6 +116,16 @@ export type Health = {
   status: string; ollama: { available: boolean; models: string[]; url?: string };
   storage: { total_bytes: number; free_bytes: number; used_bytes: number };
   database: string; data_dir: string; export_dir: string;
+};
+
+export type PublishRequest = {
+  title: string; description: string; tags: string[];
+  privacy: "public" | "unlisted" | "private";
+  category: "people" | "gaming" | "education" | "entertainment";
+};
+
+export type PublishingStatus = {
+  client_configured: boolean; authorized: boolean; token_expiry: string; client_secret_path: string;
 };
 
 export type ExportResult = { clip_id?: string; directory?: string; files?: string[]; path?: string; filename?: string; clip_count?: number };
@@ -217,6 +228,11 @@ export const api = {
   generateClipSocial: (clipId: string, options?: { model?: string; count?: number }) => request<SocialCaptions>(`/api/clips/${clipId}/social`, { method: "POST", body: JSON.stringify(options ?? {}) }),
   saveClipSocial: (clipId: string, variants: SocialVariant[]) => request<SocialCaptions>(`/api/clips/${clipId}/social/save`, { method: "POST", body: JSON.stringify({ variants }) }),
   exportClip: (clipId: string) => request<ExportResult>(`/api/clips/${clipId}/export`, { method: "POST" }),
+
+  publishingStatus: () => request<PublishingStatus>("/api/publishing/status"),
+  publishingAuthUrl: () => request<{ authorization_url: string }>("/api/publishing/auth/start", { method: "POST" }),
+  publishingDisconnect: () => request<{ authorized: boolean }>("/api/publishing/disconnect", { method: "POST" }),
+  publishClip: (clipId: string, payload: PublishRequest, confirm: boolean) => request<Job>(`/api/clips/${clipId}/publish?confirm=${confirm}`, { method: "POST", body: JSON.stringify(payload) }),
   batchExport: (clipIds: string[]) => request<{ exports: ExportResult[]; errors: Array<{ clip_id: string; error: string }> }>("/api/clips/batch/export", { method: "POST", body: JSON.stringify({ clip_ids: clipIds }) }),
   downloadBatch: (clipIds: string[], filename = "clipfree-clips.zip") => downloadPost("/api/clips/batch/download", { clip_ids: clipIds }, filename),
   exportProject: (projectId: string) => request<ExportResult>(`/api/projects/${projectId}/export`, { method: "POST" }),

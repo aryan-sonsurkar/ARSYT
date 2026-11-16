@@ -19,7 +19,7 @@ Backend modules: `ingestion.py`, `transcription.py`, `ollama.py`, `highlights.py
 
 Frontend: new studio shell in `frontend/src/app/page.tsx`, components under `frontend/src/components/studio/`, typed client in `frontend/src/lib/api.ts`, styles in `frontend/src/app/studio.css`.
 
-Tests: `tests/test_clipfree_ingestion.py`, `test_clipfree_transcription.py`, `test_clipfree_studio.py` (**39 passed**), and `tests/e2e_workflow.py` (real media).
+Tests: `tests/test_clipfree_ingestion.py`, `test_clipfree_transcription.py`, `test_clipfree_studio.py` (**42 passed**), and `tests/e2e_workflow.py` (real media).
 
 ## YuNet face detection
 
@@ -44,6 +44,12 @@ The transcription panel's free-text language field is now a dropdown of common p
 ## A/B title variants
 
 `backend/metadata.py` asks the local model for three alternative titles in different angles and stores them as `title_variants` (main title first, duplicates/blank entries dropped, each capped at 80 characters). The local fallback also produces variants from the excerpt so the studio always has choices offline. The clip metadata dialog renders every variant with a "Use" button that loads it into the editable title field — applying a variant is explicit and saved with "Save title".
+
+## YouTube publish queue (manual confirm only)
+
+`backend/publishing.py` uploads rendered clips through the official YouTube Data API v3 with the user's own Google Cloud OAuth client only — no credentials ship with ClipFree. Setup: save `client_secret.json` (an installed-app OAuth client with the `youtube.upload` scope) to `clipfree_data/publishing/client_secret.json`, press "Connect YouTube account", and finish Google's consent in the browser (loopback redirect `http://127.0.0.1:8026/api/publishing/auth/callback`). The token is stored locally at `clipfree_data/publishing/token.json` and refreshed transparently.
+
+Publishing is a durable job (kind `publish`) with resumable chunked upload and live progress. The dialog never uploads until the user types `PUBLISH` into the confirm field; title/description/tags/visibility/category are editable and `#Shorts` is appended automatically. The clip stores the resulting YouTube URL in its metadata. Interrupted uploads are failed on backend restart and retryable from the queue.
 
 ## Natural cut boundaries
 
