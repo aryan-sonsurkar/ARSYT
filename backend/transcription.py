@@ -25,6 +25,32 @@ MODEL_CATALOG: dict[str, dict[str, str]] = {
 }
 
 
+def _configure_cuda_dlls() -> None:
+    """Make the pip-installed NVIDIA CUDA 12 libraries loadable on Windows.
+
+    ctranslate2 needs cublas64_12.dll / cudnn DLLs; pip wheels place them in
+    site-packages/nvidia/*/bin. CTranslate2 resolves them with the default
+    loader, so the directories must be on PATH (add_dll_directory alone is
+    not honoured by its custom loading code).
+    """
+    if os.name != "nt":
+        return
+    extra_dirs: list[str] = []
+    for package_dir in Path(sys.prefix, "Lib", "site-packages", "nvidia").glob("*"):
+        for dll_dir in (package_dir / "bin", package_dir):
+            if dll_dir.is_dir() and any(dll_dir.glob("*.dll")):
+                try:
+                    os.add_dll_directory(str(dll_dir))
+                    extra_dirs.append(str(dll_dir))
+                except (OSError, FileNotFoundError):
+                    pass
+    if extra_dirs:
+        path = os.environ.get("PATH", "")
+        missing = [d for d in extra_dirs if d not in path]
+        if missing:
+            os.environ["PATH"] = os.pathsep.join(missing) + os.pathsep + path
+
+
 def _process_memory_bytes() -> int | None:
     """Return resident/peak process memory without requiring an optional package."""
     if os.name == "nt":
@@ -415,6 +441,8 @@ class TranscriptionService:
                     "duration_seconds": duration, "segments": segments,
                 }
 
+            if device == "cuda":
+                _configure_cuda_dlls()
             model = WhisperModel(
                 str(model_path), device=device, compute_type=compute_type,
                 cpu_threads=4, num_workers=1, local_files_only=True,
