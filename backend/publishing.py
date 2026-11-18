@@ -288,7 +288,7 @@ class PublishingService:
                 raise JobCancelled("Publish cancelled by user.")
             status, response = request.next_chunk()
             if status is not None:
-                fraction = float(status.get("progress") or 0.0)
+                fraction = _upload_fraction(status)
                 if fraction > last_fraction + 0.01:
                     last_fraction = fraction
                     self.jobs.update(job_id, progress=round(5 + fraction * 90, 2), stage="uploading to YouTube")
@@ -337,6 +337,20 @@ class PublishingService:
                 "UPDATE clips SET state=?,error=?,updated_at=? WHERE id=?",
                 ("draft" if cancelled else "failed", error, now_iso(), clip_id),
             )
+
+
+def _upload_fraction(status: object) -> float:
+    """Progress (0..1) of a resumable chunk, across google-api-client versions.
+
+    Newer versions return a MediaUploadProgress object with a ``progress()``
+    method; older code paths may hand back a plain dict.
+    """
+    if isinstance(status, dict):
+        return float(status.get("progress") or 0.0)
+    value = getattr(status, "progress", 0.0)
+    if callable(value):
+        value = value()
+    return float(value or 0.0)
 
 
 def recover_interrupted_publishes() -> None:
