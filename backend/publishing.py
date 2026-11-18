@@ -11,6 +11,7 @@ import asyncio
 import json
 import uuid
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlencode
@@ -19,7 +20,9 @@ from backend.config import settings
 from backend.database import connect, now_iso, row
 from backend.ingestion import IngestionError, JobCancelled
 
-OAUTH_SCOPE = "https://www.googleapis.com/auth/youtube.upload"
+# ``youtube`` (not ``youtube.upload``) additionally allows videos.update for
+# title edits and videos.list for analytics reads on already-uploaded videos.
+OAUTH_SCOPE = "https://www.googleapis.com/auth/youtube"
 REDIRECT_URI = "http://127.0.0.1:8026/api/publishing/auth/callback"
 CATEGORY_IDS = {"people": "22", "gaming": "20", "education": "27", "entertainment": "24"}
 PRIVACY_STATES = ("public", "unlisted", "private")
@@ -49,6 +52,7 @@ class PublishRequest:
     tags: list[str] | None = None
     privacy: str = "public"
     category: str = "entertainment"
+    publish_at: str | None = None
 
     @classmethod
     def from_payload(cls, payload: dict[str, Any]) -> "PublishRequest":
@@ -59,13 +63,56 @@ class PublishRequest:
         if category not in CATEGORY_IDS:
             raise IngestionError("Unknown category. Use one of: " + ", ".join(CATEGORY_IDS))
         tags = [str(tag).strip() for tag in (payload.get("tags") or []) if str(tag).strip()]
+        publish_at = str(payload.get("publish_at") or "").strip() or None
+        if publish_at:
+            _parse_publish_at(publish_at)
         return cls(
             title=str(payload.get("title") or "")[:100],
             description=str(payload.get("description") or "")[:5000],
             tags=tags[:30],
             privacy=privacy,
             category=category,
+            publish_at=publish_at,
         )
+
+
+def _parse_publish_at(value: str) -> datetime:
+    """Parse an RFC3339/ISO timestamp for scheduling; naive values mean local time."""
+    text = str(value).strip()
+    if text.endswith("Z"):
+        text = text[:-1] + "+00:00"
+    try:
+        moment = datetime.fromisoformat(text)
+    except ValueError as exc:
+        raise IngestionError(
+            "publish_at must be an ISO timestamp like 2026-11-19T12:00:00+05:30."
+        ) from exc
+    if moment.tzinfo is None:
+        moment = moment.astimezone()
+    if moment <= datetime.now(timezone.utc).astimezone():
+        raise IngestionError("publish_at must be in the future.")
+    return moment
+
+
+def _video_body(payload: dict[str, Any]) -> dict[str, Any]:
+    """Build the videos.insert body; scheduled uploads stay private until publishAt."""
+    publish_at = str(payload.get("publish_at") or "").strip()
+    status: dict[str, Any] = {
+        "privacyStatus": "private" if publish_at else str(payload.get("privacy") or "public"),
+        "selfDeclaredMadeForKids": False,
+    }
+    if publish_at:
+        moment = _parse_publish_at(publish_at).astimezone(timezone.utc)
+        status["publishAt"] = moment.replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    return {
+        "snippet": {
+            "title": payload.get("title") or "Podcast Short",
+            "description": payload.get("description") or "",
+            "tags": payload.get("tags") or [],
+            "categoryId": payload.get("category_id") or "24",
+        },
+        "status": status,
+    }
 
 
 class PublishingService:
@@ -197,15 +244,19 @@ class PublishingService:
             hashtags = hashtags + ["#Shorts"]
         if hashtags:
             description = (description + "\n\n" + " ".join(hashtags)).strip()
+        publish_at = str(getattr(request, "publish_at", "") or "").strip() or None
+        if publish_at:
+            _parse_publish_at(publish_at)  # fail fast, before the job is queued
         job = self.jobs.create(clip["project_id"], "publish")
         payload = {
             "clip_id": clip_id,
             "title": title,
             "description": description[:5000],
             "tags": (request.tags or [])[:30],
-            "privacy": request.privacy,
+            "privacy": "private" if publish_at else request.privacy,
             "category_id": CATEGORY_IDS[request.category],
             "video_path": str(output),
+            "publish_at": publish_at or "",
         }
         self.jobs.update(job["id"], payload_json=json.dumps(payload))
         with connect() as conn:
@@ -266,18 +317,7 @@ class PublishingService:
 
         credentials = self._load_credentials()
         youtube = build("youtube", "v3", credentials=credentials, cache_discovery=False)
-        body = {
-            "snippet": {
-                "title": payload.get("title") or "Podcast Short",
-                "description": payload.get("description") or "",
-                "tags": payload.get("tags") or [],
-                "categoryId": payload.get("category_id") or "24",
-            },
-            "status": {
-                "privacyStatus": payload.get("privacy") or "public",
-                "selfDeclaredMadeForKids": False,
-            },
-        }
+        body = _video_body(payload)
         size = video_path.stat().st_size
         media = MediaIoBaseUpload(io.BytesIO(video_path.read_bytes()), mimetype="video/mp4", resumable=True, chunksize=8 * 1024 * 1024)
         request = youtube.videos().insert(part="snippet,status", body=body, media_body=media)

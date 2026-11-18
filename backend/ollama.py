@@ -99,16 +99,19 @@ def chat_json(
                 response.raise_for_status()
                 content = response.json().get("message", {}).get("content", "")
                 return _extract_json(content)
-        except OllamaError:
-            raise
+        except OllamaError as exc:
+            # Malformed JSON earns the stricter second attempt promised in the
+            # docstring; configuration errors (e.g. missing model) still raise.
+            if "not valid JSON" not in str(exc) or attempt == 1:
+                raise
+            last_error = exc
         except (httpx.HTTPError, ValueError, KeyError) as exc:
             last_error = exc
-            if attempt == 0:
-                messages[-1]["content"] = (
-                    prompt
-                    + "\n\nYour previous response was invalid. Return one valid JSON object only. "
-                    "Do not use markdown fences or commentary."
-                )
-                payload["messages"] = messages
-                continue
+        if attempt == 0:
+            messages[-1]["content"] = (
+                prompt
+                + "\n\nYour previous response was invalid. Return one valid JSON object only. "
+                "Do not use markdown fences or commentary."
+            )
+            payload["messages"] = messages
     raise OllamaError(f"Local Ollama inference failed: {last_error}")

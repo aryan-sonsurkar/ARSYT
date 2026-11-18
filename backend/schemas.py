@@ -161,6 +161,7 @@ class PublishStartRequest(BaseModel):
     tags: list[str] = Field(default_factory=list, max_length=30)
     privacy: str = Field(default="public", pattern="^(public|unlisted|private)$")
     category: str = Field(default="entertainment", pattern="^(people|gaming|education|entertainment)$")
+    publish_at: str | None = Field(default=None, max_length=40)
 
 
 class BatchCandidateRequest(BaseModel):

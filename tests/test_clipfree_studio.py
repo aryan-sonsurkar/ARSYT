@@ -717,9 +717,64 @@ def test_publish_request_validates_payload() -> None:
     assert request.tags == ["#shorts", "podcast"]
     assert request.privacy == "unlisted"
 
-    for payload in ({"privacy": "sneaky"}, {"category": "unknown"}):
+    for payload in ({"privacy": "sneaky"}, {"category": "unknown"},
+                    {"publish_at": "not-a-date"}, {"publish_at": "2020-01-01T00:00:00Z"}):
         with pytest.raises(IngestionError):
             PublishRequest.from_payload(payload)
+
+
+def test_scheduled_publish_body_forces_private_until_publish_at() -> None:
+    from datetime import datetime, timedelta, timezone
+
+    from backend.publishing import _video_body
+
+    future = (datetime.now(timezone.utc) + timedelta(hours=2)).isoformat(timespec="seconds")
+    scheduled = _video_body({
+        "title": "T", "description": "D", "tags": ["a"], "privacy": "public",
+        "category_id": "27", "publish_at": future,
+    })
+    assert scheduled["status"]["privacyStatus"] == "private"
+    assert scheduled["status"]["publishAt"].endswith("Z")
+    assert scheduled["snippet"]["categoryId"] == "27"
+
+    # Without publish_at the requested privacy applies and no schedule is set.
+    immediate = _video_body({"title": "T", "privacy": "unlisted", "category_id": "24"})
+    assert immediate["status"]["privacyStatus"] == "unlisted"
+    assert "publishAt" not in immediate["status"]
+
+
+def test_chat_json_retries_malformed_output(monkeypatch: pytest.MonkeyPatch) -> None:
+    from backend import ollama
+
+    calls = {"n": 0}
+
+    class FakeResponse:
+        status_code = 200
+
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict:
+            content = '{"broken": ' if calls["n"] == 1 else '{"ok": true}'
+            return {"message": {"content": content}}
+
+    class FakeClient:
+        def __init__(self, *args, **kwargs) -> None:
+            return None
+
+        def __enter__(self) -> "FakeClient":
+            return self
+
+        def __exit__(self, *args) -> bool:
+            return False
+
+        def post(self, url, json=None):
+            calls["n"] += 1
+            return FakeResponse()
+
+    monkeypatch.setattr(ollama.httpx, "Client", FakeClient)
+    assert ollama.chat_json("gemma3:4b", "prompt") == {"ok": True}
+    assert calls["n"] == 2  # malformed first answer triggers the stricter retry
 
 
 def test_publish_queue_requires_client_token_confirm_and_render(

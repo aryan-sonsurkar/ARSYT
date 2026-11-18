@@ -96,7 +96,7 @@ class PipelineService:
             raise IngestionError("The previous pipeline settings could not be recovered.") from exc
         if not payload:
             raise IngestionError("The previous pipeline job has no settings to retry.")
-        return await self.start(previous["project_id"], _PipelineSettings.from_payload(payload))
+        return await self.start(previous["project_id"], _PipelineSettings(payload))
 
     # -- orchestration ------------------------------------------------------
 
