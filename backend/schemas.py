@@ -164,6 +164,12 @@ class PublishStartRequest(BaseModel):
     publish_at: str | None = Field(default=None, max_length=40)
 
 
+class InstagramPublishStartRequest(BaseModel):
+    """Explicitly-confirmed Instagram Reel post of one rendered clip."""
+
+    caption: str = Field(default="", max_length=2200)
+
+
 class BatchCandidateRequest(BaseModel):
     candidate_ids: list[str] = Field(min_length=1, max_length=100)
 

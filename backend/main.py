@@ -33,6 +33,11 @@ from backend.ingestion import (
     stream_upload,
     validate_authorized_direct_url,
 )
+from backend.instagram import (
+    InstagramService,
+    recover_interrupted_instagram_publishes,
+    resolve_served_file,
+)
 from backend.jobs import IngestionJobManager
 from backend.metadata import generate_clip_metadata
 from backend.ollama import OllamaError, available_models
@@ -50,6 +55,7 @@ from backend.schemas import (
     ClipCreateRequest,
     ClipUpdateRequest,
     HighlightStartRequest,
+    InstagramPublishStartRequest,
     JobCreate,
     PipelineStartRequest,
     ProjectCreate,
@@ -75,6 +81,7 @@ highlights = HighlightService(jobs)
 clips = ClipService(jobs)
 pipeline = PipelineService(jobs, transcription, highlights, clips)
 publishing = PublishingService(jobs)
+instagram = InstagramService(jobs)
 
 
 @asynccontextmanager
@@ -85,6 +92,7 @@ async def lifespan(_: FastAPI):
     recover_interrupted_renders()
     recover_interrupted_pipelines()
     recover_interrupted_publishes()
+    recover_interrupted_instagram_publishes()
     export_root().mkdir(parents=True, exist_ok=True)
     yield
 
@@ -456,6 +464,8 @@ async def retry_job(job_id: str) -> dict:
             return await pipeline.retry(job_id)
         if kind == "publish":
             return await publishing.retry(job_id)
+        if kind == "publish_instagram":
+            return await instagram.retry(job_id)
         return await jobs.retry(job_id)
     except IngestionError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
@@ -829,6 +839,66 @@ async def publish_clip(clip_id: str, payload: PublishStartRequest, confirm: bool
         return publishing.start_publish(clip_id, payload, confirm=confirm)
     except IngestionError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@app.get("/api/instagram/status")
+async def instagram_status() -> dict:
+    return instagram.status()
+
+
+@app.post("/api/instagram/auth/start")
+async def instagram_auth_start() -> dict:
+    """Start the OAuth consent flow with the user's own Meta app credentials."""
+    try:
+        return {"authorization_url": instagram.authorization_url()}
+    except IngestionError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/api/instagram/auth/callback")
+async def instagram_auth_callback(state: str = Query(default=""), code: str = Query(default="")) -> Response:
+    """Meta redirects back here with the consent code."""
+    try:
+        instagram.exchange_code(state, code)
+    except IngestionError as exc:
+        return Response(
+            content=f"<!doctype html><title>ClipFree</title><body style='font-family:sans-serif;text-align:center;padding:4rem'><h2>Authorization failed</h2><p>{exc}</p><p>You can close this tab.</p></body>",
+            media_type="text/html", status_code=400,
+        )
+    return Response(
+        content="<!doctype html><title>ClipFree</title><body style='font-family:sans-serif;text-align:center;padding:4rem'><h2>Instagram connected</h2><p>ClipFree can now queue Reel posts. You can close this tab.</p></body>",
+        media_type="text/html",
+    )
+
+
+@app.post("/api/instagram/disconnect")
+async def instagram_disconnect() -> dict:
+    instagram.disconnect()
+    return {"authorized": False}
+
+
+@app.post("/api/clips/{clip_id}/publish/instagram", status_code=202)
+async def publish_clip_instagram(
+    clip_id: str, payload: InstagramPublishStartRequest, confirm: bool = Query(default=False)
+) -> dict:
+    """Queue an explicit, user-confirmed Reel post to the user's own Instagram account."""
+    try:
+        return instagram.start_publish(clip_id, payload, confirm=confirm)
+    except IngestionError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@app.get("/api/instagram/serve/{token}")
+async def instagram_serve(token: str, file: str = Query(default="")) -> Response:
+    """Short-lived, token-gated file hand-off so Instagram can fetch the video.
+
+    Only exposes clips explicitly registered for an upload window; there is no
+    directory listing and no way to reach arbitrary paths.
+    """
+    path = resolve_served_file(token, file)
+    if path is None:
+        raise HTTPException(status_code=404, detail="Not found")
+    return FileResponse(path, media_type="video/mp4")
 
 
 @app.get("/api/clips/{clip_id}/social")

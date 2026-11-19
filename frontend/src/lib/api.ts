@@ -43,6 +43,7 @@ export type ClipMetadata = {
   title?: string; title_variants?: string[]; description?: string; hashtags?: string[]; category?: string;
   thumbnail_text?: string; generated_by?: string;
   youtube_video_id?: string; youtube_url?: string;
+  instagram_media_id?: string; instagram_permalink?: string;
 };
 
 export type SocialVariant = {
@@ -126,6 +127,13 @@ export type PublishRequest = {
 
 export type PublishingStatus = {
   client_configured: boolean; authorized: boolean; token_expiry: string; client_secret_path: string;
+};
+
+export type InstagramPublishRequest = { caption: string };
+
+export type InstagramStatus = {
+  client_configured: boolean; authorized: boolean; username: string; token_expiry: string;
+  client_secret_path: string; public_url: string; public_url_configured: boolean;
 };
 
 export type ExportResult = { clip_id?: string; directory?: string; files?: string[]; path?: string; filename?: string; clip_count?: number };
@@ -234,6 +242,10 @@ export const api = {
   publishingAuthUrl: () => request<{ authorization_url: string }>("/api/publishing/auth/start", { method: "POST" }),
   publishingDisconnect: () => request<{ authorized: boolean }>("/api/publishing/disconnect", { method: "POST" }),
   publishClip: (clipId: string, payload: PublishRequest, confirm: boolean) => request<Job>(`/api/clips/${clipId}/publish?confirm=${confirm}`, { method: "POST", body: JSON.stringify(payload) }),
+  instagramStatus: () => request<InstagramStatus>("/api/instagram/status"),
+  instagramAuthUrl: () => request<{ authorization_url: string }>("/api/instagram/auth/start", { method: "POST" }),
+  instagramDisconnect: () => request<{ authorized: boolean }>("/api/instagram/disconnect", { method: "POST" }),
+  publishClipInstagram: (clipId: string, payload: InstagramPublishRequest, confirm: boolean) => request<Job>(`/api/clips/${clipId}/publish/instagram?confirm=${confirm}`, { method: "POST", body: JSON.stringify(payload) }),
   batchExport: (clipIds: string[]) => request<{ exports: ExportResult[]; errors: Array<{ clip_id: string; error: string }> }>("/api/clips/batch/export", { method: "POST", body: JSON.stringify({ clip_ids: clipIds }) }),
   downloadBatch: (clipIds: string[], filename = "clipfree-clips.zip") => downloadPost("/api/clips/batch/download", { clip_ids: clipIds }, filename),
   exportProject: (projectId: string) => request<ExportResult>(`/api/projects/${projectId}/export`, { method: "POST" }),

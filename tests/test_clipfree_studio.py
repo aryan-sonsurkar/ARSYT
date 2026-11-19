@@ -867,6 +867,160 @@ def test_recover_interrupted_publishes_fails_stranded_jobs(
     assert clip["state"] == "failed"
 
 
+def test_instagram_queue_requires_client_auth_public_url_and_render(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("CLIPFREE_DATA_DIR", str(tmp_path / "ig-data"))
+    from backend.main import app
+
+    with TestClient(app) as client:
+        status = client.get("/api/instagram/status").json()
+        assert status["client_configured"] is False
+        assert status["authorized"] is False
+        assert status["public_url_configured"] is False
+
+        # OAuth cannot start without the user's own Meta app client JSON.
+        auth = client.post("/api/instagram/auth/start")
+        assert auth.status_code == 400
+        assert "instagram_client_secret.json" in auth.json()["detail"]
+
+        project_id = client.post("/api/projects", json={"name": "IG Guard"}).json()["id"]
+        clip_id = "seed-ig-clip"
+        now = "2026-01-01T00:00:00+00:00"
+        with connect() as conn:
+            conn.execute(
+                """INSERT INTO clips(id,project_id,title,start_time,end_time,state,created_at,updated_at)
+                   VALUES(?,?,?,?,?,?,?,?)""",
+                (clip_id, project_id, "IG guard clip", 10.0, 40.0, "rendered", now, now),
+            )
+
+        # Explicit confirmation is mandatory — never post silently.
+        unconfirmed = client.post(f"/api/clips/{clip_id}/publish/instagram", json={"caption": "x"})
+        assert unconfirmed.status_code == 409
+        assert "confirm=true" in unconfirmed.json()["detail"]
+
+        confirmed = client.post(f"/api/clips/{clip_id}/publish/instagram?confirm=true", json={"caption": "x"})
+        assert confirmed.status_code == 409
+        assert "Not authorized" in confirmed.json()["detail"]
+
+        ig_dir = tmp_path / "ig-data" / "publishing"
+        ig_dir.mkdir(parents=True, exist_ok=True)
+        (ig_dir / "instagram_token.json").write_text(
+            json.dumps({"access_token": "fake", "ig_user_id": "123"}), encoding="utf-8"
+        )
+        no_public = client.post(f"/api/clips/{clip_id}/publish/instagram?confirm=true", json={"caption": "x"})
+        assert no_public.status_code == 409
+        assert "CLIPFREE_INSTAGRAM_PUBLIC_URL" in no_public.json()["detail"]
+
+        # With a public origin there is still nothing to post until it renders.
+        monkeypatch.setenv("CLIPFREE_INSTAGRAM_PUBLIC_URL", "https://tunnel.example")
+        no_render = client.post(f"/api/clips/{clip_id}/publish/instagram?confirm=true", json={"caption": "x"})
+        assert no_render.status_code == 409
+        assert "Render" in no_render.json()["detail"]
+
+
+def test_instagram_serve_exposes_only_registered_files(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("CLIPFREE_DATA_DIR", str(tmp_path / "ig-serve"))
+    monkeypatch.setenv("CLIPFREE_INSTAGRAM_PUBLIC_URL", "https://tunnel.example")
+    from backend.instagram import public_clip_url, register_served_file, resolve_served_file
+    from backend.main import app
+
+    clip_file = tmp_path / "reel.mp4"
+    clip_file.write_bytes(b"fake-video")
+
+    with TestClient(app) as client:
+        token = register_served_file(clip_file)
+        ok = client.get(f"/api/instagram/serve/{token}", params={"file": "reel.mp4"})
+        assert ok.status_code == 200
+        assert ok.content == b"fake-video"
+
+        # No listing, no forged tokens, no paths outside the registry.
+        assert client.get(f"/api/instagram/serve/{token}").status_code == 404
+        assert client.get("/api/instagram/serve/wrong-token", params={"file": "reel.mp4"}).status_code == 404
+        assert client.get(f"/api/instagram/serve/{token}", params={"file": "clipfree.db"}).status_code == 404
+        assert (
+            client.get(
+                f"/api/instagram/serve/{token}",
+                params={"file": "../publishing/instagram_token.json"},
+            ).status_code
+            == 404
+        )
+        assert resolve_served_file(token, "reel.mp4") == clip_file
+        assert public_clip_url(clip_file).startswith("https://tunnel.example/api/instagram/serve/")
+
+
+def test_instagram_run_records_permalink_and_recover_fails_stranded_jobs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import asyncio
+
+    monkeypatch.setenv("CLIPFREE_DATA_DIR", str(tmp_path / "ig-run"))
+    monkeypatch.setenv("CLIPFREE_INSTAGRAM_PUBLIC_URL", "https://tunnel.example")
+    from backend.instagram import recover_interrupted_instagram_publishes
+    from backend.main import app, instagram as ig_service, jobs as job_manager
+
+    with TestClient(app) as client:
+        project_id = client.post("/api/projects", json={"name": "IG Run"}).json()["id"]
+        clip_id = "run-ig-clip"
+        video = tmp_path / "run.mp4"
+        video.write_bytes(b"video-bytes")
+        now = "2026-01-01T00:00:00+00:00"
+        with connect() as conn:
+            conn.execute(
+                """INSERT INTO clips(id,project_id,title,start_time,end_time,state,created_at,updated_at)
+                   VALUES(?,?,?,?,?,?,?,?)""",
+                (clip_id, project_id, "Run", 0.0, 10.0, "rendered", now, now),
+            )
+            conn.execute("UPDATE clips SET output_path=?,metadata_json=? WHERE id=?",
+                         (str(video), json.dumps({"hashtags": ["RajShamani", "#Business"]}), clip_id))
+
+        # Empty caption falls back to the clip title plus its hashtags.
+        clip_row = row("SELECT * FROM clips WHERE id=?", (clip_id,))
+        default_caption = ig_service._default_caption(clip_row)
+        assert "Run" in default_caption and "#RajShamani" in default_caption and "#Business" in default_caption
+
+        ig_dir = tmp_path / "ig-run" / "publishing"
+        ig_dir.mkdir(parents=True, exist_ok=True)
+        (ig_dir / "instagram_token.json").write_text(
+            json.dumps({"access_token": "fake", "ig_user_id": "123"}), encoding="utf-8"
+        )
+        job = job_manager.create(project_id, "publish_instagram")
+        payload = {"clip_id": clip_id, "caption": "cap", "video_path": str(video)}
+        job_manager.update(job["id"], payload_json=json.dumps(payload))
+
+        # The Graph API call is stubbed: tests must never reach the network.
+        monkeypatch.setattr(
+            ig_service, "_publish_reel",
+            lambda *args, **kwargs: {"id": "IGMEDIA1", "permalink": "https://www.instagram.com/reel/abc/"},
+        )
+        asyncio.run(ig_service.run(job["id"], clip_id, payload))
+
+        refreshed = row("SELECT * FROM jobs WHERE id=?", (job["id"],))
+        assert refreshed["state"] == "completed"
+        assert refreshed["progress"] == 100
+        clip = row("SELECT * FROM clips WHERE id=?", (clip_id,))
+        metadata = json.loads(clip["metadata_json"] or "{}")
+        assert metadata["instagram_media_id"] == "IGMEDIA1"
+        assert metadata["instagram_permalink"] == "https://www.instagram.com/reel/abc/"
+        assert clip["state"] == "rendered"  # clip state stays owned by the YouTube flow
+
+        # A job stranded by a restart fails on recovery without touching the clip.
+        with connect() as conn:
+            conn.execute(
+                """INSERT INTO jobs(id,project_id,kind,state,stage,progress,payload_json,created_at)
+                   VALUES(?,?,?,?,?,?,?,?)""",
+                ("job-stranded", project_id, "publish_instagram", "running", "uploading", 40,
+                 json.dumps({"clip_id": clip_id}), now),
+            )
+        recover_interrupted_instagram_publishes()
+        stranded = row("SELECT * FROM jobs WHERE id='job-stranded'")
+        assert stranded["state"] == "failed"
+        assert "restarted" in stranded["error"].lower()
+        assert row("SELECT * FROM clips WHERE id=?", (clip_id,))["state"] == "rendered"
+
+
 def test_transcript_segment_edits_retime_words_and_rewrite_files(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

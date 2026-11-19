@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import {
-  Captions, Check, ChevronsLeft, ChevronsRight, Copy, Download, Film, Flame, LoaderCircle, Package,
+  Captions, Check, ChevronsLeft, ChevronsRight, Copy, Download, Film, Flame, Instagram, LoaderCircle, Package,
   PencilLine, Play, Sparkles, Trash2, UploadCloud, WandSparkles, Youtube,
 } from "lucide-react";
 import { api, AppSettings, Clip, formatBytes, formatTimestamp, PublishRequest, relativeTime, SocialVariant } from "@/lib/api";
@@ -19,7 +19,7 @@ type Props = {
   onToast: (message: string) => void;
 };
 
-type Dialog = "" | "preview" | "render" | "metadata" | "social" | "publish";
+type Dialog = "" | "preview" | "render" | "metadata" | "social" | "publish" | "publishInstagram";
 
 export function ClipCard({ clip, settings, musicFiles = [], showProject = false, onChanged, onToast }: Props) {
   const [dialog, setDialog] = useState<Dialog>("");
@@ -48,6 +48,14 @@ export function ClipCard({ clip, settings, musicFiles = [], showProject = false,
   const [pubAuthed, setPubAuthed] = useState<boolean | null>(null);
   const [pubClientConfigured, setPubClientConfigured] = useState<boolean | null>(null);
   const [pubStatusChecking, setPubStatusChecking] = useState(false);
+  const [igCaption, setIgCaption] = useState("");
+  const [igConfirmText, setIgConfirmText] = useState("");
+  const [igAuthed, setIgAuthed] = useState<boolean | null>(null);
+  const [igClientConfigured, setIgClientConfigured] = useState<boolean | null>(null);
+  const [igPublicUrl, setIgPublicUrl] = useState("");
+  const [igPublicConfigured, setIgPublicConfigured] = useState(false);
+  const [igUsername, setIgUsername] = useState("");
+  const [igStatusChecking, setIgStatusChecking] = useState(false);
   const [error, setError] = useState("");
 
   const rendered = clip.state === "rendered" && clip.has_output;
@@ -80,6 +88,27 @@ export function ClipCard({ clip, settings, musicFiles = [], showProject = false,
         .then((status) => { setPubAuthed(status.authorized); setPubClientConfigured(status.client_configured); })
         .catch(() => { setPubAuthed(false); setPubClientConfigured(false); })
         .finally(() => setPubStatusChecking(false));
+    }
+    if (next === "publishInstagram") {
+      setIgCaption("");
+      setIgConfirmText("");
+      setIgAuthed(null);
+      setIgClientConfigured(null);
+      setIgPublicUrl("");
+      setIgPublicConfigured(false);
+      setIgUsername("");
+      setIgStatusChecking(true);
+      setError("");
+      void api.instagramStatus()
+        .then((status) => {
+          setIgAuthed(status.authorized);
+          setIgClientConfigured(status.client_configured);
+          setIgPublicUrl(status.public_url);
+          setIgPublicConfigured(status.public_url_configured);
+          setIgUsername(status.username);
+        })
+        .catch(() => { setIgAuthed(false); setIgClientConfigured(false); setIgPublicConfigured(false); })
+        .finally(() => setIgStatusChecking(false));
     }
     if (next === "social") {
       setCopied("");
@@ -241,6 +270,44 @@ export function ClipCard({ clip, settings, musicFiles = [], showProject = false,
     } finally { setBusy(false); }
   }
 
+  async function connectInstagram() {
+    setBusy(true); setError("");
+    try {
+      const result = await api.instagramAuthUrl();
+      window.open(result.authorization_url, "_blank", "noopener");
+      onToast("Meta consent opened in a new tab. Finish it, then reopen this dialog.");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not start the OAuth flow.");
+    } finally { setBusy(false); }
+  }
+
+  async function disconnectInstagram() {
+    setBusy(true);
+    try {
+      await api.instagramDisconnect();
+      setIgAuthed(false);
+      onToast("Instagram account disconnected.");
+    } catch {
+      onToast("Disconnect failed.");
+    } finally { setBusy(false); }
+  }
+
+  async function publishInstagram() {
+    if (igConfirmText !== "PUBLISH") {
+      setError("Type PUBLISH exactly to confirm the post to Instagram.");
+      return;
+    }
+    setBusy(true); setError("");
+    try {
+      await api.publishClipInstagram(clip.id, { caption: igCaption }, true);
+      onToast("Reel queued to Instagram. Progress is live in the queue.");
+      setDialog("");
+      onChanged();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not queue the Reel.");
+    } finally { setBusy(false); }
+  }
+
   async function remove() {
     if (!window.confirm(`Delete “${clip.title}” and its rendered files? This cannot be undone.`)) return;
     setBusy(true);
@@ -307,6 +374,7 @@ export function ClipCard({ clip, settings, musicFiles = [], showProject = false,
             {rendered && <a className="st-icon-action" title="Download SRT" href={api.clipCaptionsUrl(clip.id)}><Captions size={14} /></a>}
             {rendered && <button className="st-icon-action" title="Export package" disabled={busy} onClick={() => void exportClip()}><Package size={14} /></button>}
             {rendered && <button className="st-icon-action" title="Publish to YouTube" disabled={busy} onClick={() => openDialog("publish")}><UploadCloud size={14} /></button>}
+            {rendered && <button className="st-icon-action" title="Publish to Instagram" disabled={busy} onClick={() => openDialog("publishInstagram")}><Instagram size={14} /></button>}
             <button className="st-icon-action danger" title="Delete clip" disabled={busy} onClick={() => void remove()}><Trash2 size={14} /></button>
           </div>
         </div>
@@ -560,6 +628,58 @@ export function ClipCard({ clip, settings, musicFiles = [], showProject = false,
             </>
           )}
           {error && !pubAuthed && <InlineNote tone="error">{error}</InlineNote>}
+        </div>
+      </Modal>
+
+      <Modal open={dialog === "publishInstagram"} onClose={() => setDialog("")} title="Publish to Instagram" subtitle="Reels go to your own account via the official Graph API. Nothing is posted until you type PUBLISH." width={620}>
+        <div className="st-form">
+          {igStatusChecking ? (
+            <InlineNote><Busy label="Checking Instagram connection…" /></InlineNote>
+          ) : igAuthed ? (
+            <InlineNote tone="ok">Instagram connected{igUsername ? ` as @${igUsername}` : ""}. Posts use your own credentials stored locally.</InlineNote>
+          ) : igClientConfigured ? (
+            <InlineNote tone="error">Not authorized yet. Connect your own Instagram account first.</InlineNote>
+          ) : (
+            <InlineNote tone="error">No Meta app yet. Save your Instagram app client JSON to the path below (local data folder, publishing subfolder), then connect.</InlineNote>
+          )}
+          {!igAuthed && (
+            <div className="st-modal-actions">
+              <Field label="Client secret path" hint="Create an app at developers.facebook.com with the Instagram Graph API and Instagram content publish permissions, then save its client_id/client_secret JSON.">
+                <input className="form-input" readOnly value={igClientConfigured ? "instagram_client_secret.json found ✓" : "clipfree_data/publishing/instagram_client_secret.json"} />
+              </Field>
+              <button className="primary-button" onClick={() => void connectInstagram()} disabled={busy || !igClientConfigured}>
+                <UploadCloud size={15} /> Connect Instagram account
+              </button>
+              {igAuthed === false && igClientConfigured && (
+                <button className="secondary-button" onClick={() => void disconnectInstagram()} disabled={busy}>Clear saved token</button>
+              )}
+            </div>
+          )}
+          {igAuthed && (
+            <>
+              {!igPublicConfigured && (
+                <InlineNote tone="error">
+                  Instagram must fetch the video from a public URL. Set CLIPFREE_INSTAGRAM_PUBLIC_URL to a free tunnel (e.g. Cloudflare cloudflared) pointing at this backend, then restart it.
+                  {igPublicUrl ? ` Current value: ${igPublicUrl}` : ""}
+                </InlineNote>
+              )}
+              <Field label="Caption" hint={`Leave empty to post the clip title plus its hashtags. ${2200} characters max.`}>
+                <textarea className="form-input" rows={4} value={igCaption} maxLength={2200} placeholder={clip.title} onChange={(event) => setIgCaption(event.target.value)} />
+              </Field>
+              {clip.metadata?.instagram_permalink && <InlineNote tone="ok">Already posted: {clip.metadata.instagram_permalink}</InlineNote>}
+              <Field label="Type PUBLISH to confirm the post">
+                <input className="form-input" value={igConfirmText} placeholder="PUBLISH" onChange={(event) => setIgConfirmText(event.target.value)} />
+              </Field>
+              {error && <InlineNote tone="error">{error}</InlineNote>}
+              <div className="st-modal-actions">
+                <button className="secondary-button" onClick={() => setDialog("")} disabled={busy}>Cancel</button>
+                <button className="primary-button" onClick={() => void publishInstagram()} disabled={busy || !igPublicConfigured || igConfirmText !== "PUBLISH"}>
+                  {busy ? <Busy label="Queueing…" /> : <><UploadCloud size={15} /> Post Reel</>}
+                </button>
+              </div>
+            </>
+          )}
+          {error && !igAuthed && <InlineNote tone="error">{error}</InlineNote>}
         </div>
       </Modal>
     </>
