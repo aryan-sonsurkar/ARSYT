@@ -34,7 +34,7 @@ from backend.ingestion import IngestionError, JobCancelled
 GRAPH = "https://graph.facebook.com/v21.0"
 AUTH_URL = "https://www.facebook.com/v21.0/dialog/oauth"
 TOKEN_URL = f"{GRAPH}/oauth/access_token"
-OAUTH_SCOPE = "instagram_basic,instagram_content_publish,pages_show_list"
+OAUTH_SCOPE = "instagram_basic,instagram_content_publish,pages_show_list,pages_read_engagement"
 CONTAINER_TIMEOUT_SECONDS = 300.0
 CONTAINER_POLL_SECONDS = 5.0
 SERVE_TTL_SECONDS = 3600
