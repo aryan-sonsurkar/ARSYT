@@ -88,7 +88,7 @@ class ClipUpdateRequest(BaseModel):
     start_time: float | None = Field(default=None, ge=0)
     end_time: float | None = Field(default=None, ge=0)
     preset: str | None = Field(default=None, pattern="^(cinematic|podcast|minimal|gaming|motivational)$")
-    caption_style: str | None = Field(default=None, pattern="^(kinetic|word|cinematic|podcast|minimal)$")
+    caption_style: str | None = Field(default=None, pattern="^(kinetic|word|cinematic|podcast|minimal|accent)$")
     music_path: str | None = None
     music_volume: float | None = Field(default=None, ge=0, le=1)
     caption_options: dict | None = None

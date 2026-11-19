@@ -39,6 +39,12 @@ CAPTION_STYLES: dict[str, dict[str, Any]] = {
         "background_opacity": 45, "max_words": 9, "position": "bottom", "uppercase": False,
         "word_highlight": False, "pop": False,
     },
+    "accent": {
+        "label": "Accent bar", "font": "Georgia", "font_size": 58, "primary": "#FFFFFF",
+        "highlight": "#FFFFFF", "outline": 2, "shadow": 2, "background": "#000000",
+        "background_opacity": 0, "max_words": 7, "position": "top", "uppercase": False,
+        "word_highlight": False, "pop": False, "accent_bar": True, "accent_color": "#FF3B30",
+    },
 }
 
 
@@ -230,7 +236,7 @@ def build_ass(
     if not words:
         return _empty_ass(style)
 
-    max_chars = {"kinetic": 26, "word": 14, "cinematic": 52, "podcast": 34, "minimal": 60}.get(style_name, 34)
+    max_chars = {"kinetic": 26, "word": 14, "cinematic": 52, "podcast": 34, "minimal": 60, "accent": 40}.get(style_name, 34)
     cues = _group_words(words, int(style["max_words"]), max_chars, 4.6)
     primary = _ass_color(str(style["primary"]))
     highlight = _ass_color(str(style["highlight"]))
@@ -286,9 +292,32 @@ def build_ass(
             rendered_words = [word["word"].upper() for word in cue]
         else:
             rendered_words = [word["word"] for word in cue]
-        cue_font = _fit_font_size(" ".join(rendered_words), font_size)
+        # The accent style wraps at full size (editorial look); the other
+        # centered styles shrink long lines so they never leave the frame.
+        if style_name == "accent":
+            cue_font = font_size
+        else:
+            cue_font = _fit_font_size(" ".join(rendered_words), font_size)
 
-        if word_highlight:
+        if style_name == "accent":
+            # Top-left serif block with a red bar down its left edge, matching
+            # the editorial @thinkwithshamani Shorts look.
+            text_line = " ".join(rendered_words)
+            text_x = 60 + 10 + 24
+            # Georgia averages ~0.52 em/glyph (Arial Bold's 0.74 overestimates
+            # and made the bar overshoot single-line cues).
+            per_line = max(8, int((CAPTION_WIDTH - text_x - CAPTION_SIDE_MARGIN) / max(1.0, font_size * 0.52)))
+            line_count = max(1, (len(text_line) + per_line - 1) // per_line)
+            bar_height = line_count * int(font_size * 1.25) + 18
+            bar_color = _ass_color(str(style.get("accent_color", "#FF3B30")))
+            bar = (
+                f"{{\\an7\\pos(60,{y})\\bord0\\shad0\\1c{bar_color}\\fad(150,150)\\p1}}"
+                f"m 0 0 l 10 0 l 10 {bar_height} l 0 {bar_height}{{\\p0}}"
+            )
+            lines.append(f"Dialogue: 0,{_ass_time(cue_start)},{_ass_time(cue_end)},Clip,,0,0,0,,{bar}")
+            text = f"{{\\an7\\pos({text_x},{y})\\fs{cue_font}\\fad(150,150)}}" + _escape(text_line)
+            lines.append(f"Dialogue: 0,{_ass_time(cue_start)},{_ass_time(cue_end)},Clip,,0,0,0,,{text}")
+        elif word_highlight:
             previous_end = cue_start
             for index, word in enumerate(cue):
                 event_start = cue_start if index == 0 else max(word["start"], previous_end)

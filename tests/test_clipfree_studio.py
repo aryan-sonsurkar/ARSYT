@@ -777,6 +777,26 @@ def test_chat_json_retries_malformed_output(monkeypatch: pytest.MonkeyPatch) -> 
     assert calls["n"] == 2  # malformed first answer triggers the stricter retry
 
 
+def test_accent_caption_style_is_left_aligned_with_bar() -> None:
+    from backend.captions import CAPTION_STYLES, build_ass
+
+    assert "accent" in CAPTION_STYLES
+    words = "the only way to get overnight success".split()
+    content = {
+        "segments": [{
+            "start": 0.0, "end": 3.5, "text": " ".join(words),
+            "words": [{"start": i * 0.2, "end": i * 0.2 + 0.2, "word": w} for i, w in enumerate(words)],
+        }]
+    }
+    ass = build_ass(content, 0.0, 3.5, "accent")
+    assert "\\an7" in ass          # top-left anchored, not centered
+    assert "\\p1" in ass           # red accent bar drawn as a vector rect
+    assert "m 0 0 l" in ass
+    assert "THE ONLY" not in ass   # sentence case is preserved
+    # one bar event plus one text event for the single cue
+    assert ass.count("Dialogue:") >= 2
+
+
 def test_publish_queue_requires_client_token_confirm_and_render(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
